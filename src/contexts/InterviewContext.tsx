@@ -3,7 +3,6 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 
 export interface InterviewRoom {
   id: string;
-  currentRole: string;
   targetRole: string;
   targetCompany: string;
   yearsOfExperience: number;
@@ -11,6 +10,8 @@ export interface InterviewRoom {
   resumeUrl?: string;
   createdAt: string;
   userId: string;
+  currentDesignation?: string;       
+  sessionInterval?: number;  
 }
 
 interface InterviewContextType {

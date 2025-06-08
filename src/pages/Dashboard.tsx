@@ -191,38 +191,40 @@ const Dashboard = () => {
                       </div>
                     </CardHeader>
                     <CardContent>
-                      <div className="space-y-2 mb-4">
-                        <p className="text-sm text-muted-foreground">
-                          <strong>Current Role:</strong> {room.currentRole}
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          <strong>Experience:</strong> {room.yearsOfExperience} years
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          <strong>Created:</strong> {new Date(room.createdAt).toLocaleDateString()}
-                        </p>
-                      </div>
-                      <div className="flex space-x-2">
-                        <Button 
-                          onClick={() => handleStartInterview(room.id)}
-                          className="flex-1"
-                        >
-                          <Video className="mr-2 h-4 w-4" />
-                          Start Interview
-                        </Button>
-                        <Button
-                          className="flex-1"
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          className="flex-1"
-                          onClick={() => handleDeleteRoom(room.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </CardContent>
+  <div className="space-y-2 mb-4">
+    <p className="text-sm text-muted-foreground">
+      <strong>Current Designation:</strong> {room.currentDesignation || "N/A"}
+    </p>
+    <p className="text-sm text-muted-foreground">
+      <strong>Experience:</strong> {room.yearsOfExperience} years
+    </p>
+    <p className="text-sm text-muted-foreground">
+      <strong>Session Interval:</strong> {room.sessionInterval || "Not set"}
+    </p>
+    <p className="text-sm text-muted-foreground">
+      <strong>Created:</strong> {new Date(room.createdAt).toLocaleDateString()}
+    </p>
+  </div>
+  <div className="flex space-x-2">
+    <Button 
+      onClick={() => handleStartInterview(room.id)}
+      className="flex-1"
+    >
+      <Video className="mr-2 h-4 w-4" />
+      Start Interview
+    </Button>
+    <Button className="flex-1">
+      <Edit className="h-4 w-4" />
+    </Button>
+    <Button
+      className="flex-1"
+      onClick={() => handleDeleteRoom(room.id)}
+    >
+      <Trash2 className="h-4 w-4" />
+    </Button>
+  </div>
+</CardContent>
+
                   </Card>
                 ))}
               </div>

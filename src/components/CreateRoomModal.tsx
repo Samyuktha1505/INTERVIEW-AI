@@ -29,13 +29,15 @@ interface CreateRoomModalProps {
 
 const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ open, onOpenChange }) => {
   const [formData, setFormData] = useState({
-    currentRole: '',
+    currentDesignation: '',
     targetRole: '',
     targetCompany: '',
     yearsOfExperience: 0,
+    sessionInterval: '',
     interviewType: '',
     resumeFile: null as File | null,
   });
+
   const [isLoading, setIsLoading] = useState(false);
   const { user } = useAuth();
   const { createRoom } = useInterview();
@@ -56,12 +58,17 @@ const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ open, onOpenChange })
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.type === 'application/pdf' || file.type.includes('document')) {
+      const allowedTypes = [
+        'application/pdf',
+        'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
+      ];
+      if (allowedTypes.includes(file.type)) {
         setFormData((prev) => ({ ...prev, resumeFile: file }));
       } else {
         toast({
           title: "Invalid file type",
-          description: "Please upload a PDF or DOC file",
+          description: "Please upload a PDF or DOC/DOCX file",
           variant: "destructive",
         });
       }
@@ -69,7 +76,9 @@ const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ open, onOpenChange })
   };
 
   const validateForm = () => {
-    if (!formData.currentRole || !formData.targetRole || !formData.targetCompany || !formData.interviewType) {
+    const { currentDesignation, targetRole, targetCompany, interviewType, sessionInterval, resumeFile } = formData;
+
+    if (!currentDesignation || !targetRole || !targetCompany || !interviewType) {
       toast({
         title: "Validation Error",
         description: "Please fill in all required fields",
@@ -77,12 +86,33 @@ const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ open, onOpenChange })
       });
       return false;
     }
+
+    if (!resumeFile && !user?.resumeUrl) {
+      toast({
+        title: "Validation Error",
+        description: "Please upload a resume file or ensure you have a resume uploaded.",
+        variant: "destructive",
+      });
+      return false;
+    }
+
+    if (sessionInterval) {
+      const val = Number(sessionInterval);
+      if (isNaN(val) || val < 5 || val > 180) {
+        toast({
+          title: "Validation Error",
+          description: "Session interval must be a number between 5 and 180 minutes.",
+          variant: "destructive",
+        });
+        return false;
+      }
+    }
+
     return true;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
     if (!validateForm()) return;
 
     setIsLoading(true);
@@ -94,10 +124,11 @@ const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ open, onOpenChange })
       }
 
       const roomData = {
-        currentRole: formData.currentRole,
+        currentDesignation: formData.currentDesignation,
         targetRole: formData.targetRole,
         targetCompany: formData.targetCompany,
         yearsOfExperience: formData.yearsOfExperience,
+        sessionInterval: formData.sessionInterval ? Number(formData.sessionInterval) : undefined,
         interviewType: formData.interviewType,
         resumeUrl,
       };
@@ -111,10 +142,11 @@ const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ open, onOpenChange })
 
       onOpenChange(false);
       setFormData({
-        currentRole: '',
+        currentDesignation: '',
         targetRole: '',
         targetCompany: '',
         yearsOfExperience: 0,
+        sessionInterval: '',
         interviewType: '',
         resumeFile: null,
       });
@@ -138,14 +170,14 @@ const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ open, onOpenChange })
             Set up your mock interview session
           </DialogDescription>
         </DialogHeader>
-        <form className="space-y-4">
+        <form className="space-y-4" onSubmit={handleSubmit}>
           <div className="space-y-2">
-            <Label htmlFor="currentRole">Current Role *</Label>
+            <Label htmlFor="currentDesignation">Current Designation *</Label>
             <Input
-              id="currentRole"
+              id="currentDesignation"
               placeholder="e.g., Software Engineer"
-              value={formData.currentRole}
-              onChange={(e) => handleInputChange('currentRole', e.target.value)}
+              value={formData.currentDesignation}
+              onChange={(e) => handleInputChange('currentDesignation', e.target.value)}
               required
             />
           </div>
@@ -181,6 +213,22 @@ const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ open, onOpenChange })
               min={0}
               step={1}
               className="w-full"
+              aria-valuemin={0}
+              aria-valuemax={20}
+              aria-valuenow={formData.yearsOfExperience}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="sessionInterval">Session Interval (in mins)</Label>
+            <Input
+              id="sessionInterval"
+              type="number"
+              min={5}
+              max={180}
+              placeholder="e.g., 45"
+              value={formData.sessionInterval}
+              onChange={(e) => handleInputChange('sessionInterval', e.target.value)}
             />
           </div>
 
@@ -210,6 +258,7 @@ const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ open, onOpenChange })
             )}
             <div className="relative">
               <Input
+                key={formData.resumeFile ? formData.resumeFile.name : 'empty'}
                 id="resume"
                 type="file"
                 accept=".pdf,.doc,.docx"
@@ -232,8 +281,7 @@ const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ open, onOpenChange })
 
           <div className="pt-4">
             <Button
-              type="button"
-              onClick={handleSubmit}
+              type="submit"
               className="w-full"
               disabled={isLoading}
             >
