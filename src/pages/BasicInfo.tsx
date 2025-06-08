@@ -1,3 +1,5 @@
+// BasicInfo.tsx
+
 import React, { useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -5,14 +7,17 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { toast } from "@/hooks/use-toast";
-import { format } from "date-fns";
-import { CalendarIcon, Upload } from "lucide-react";
+import { Upload, CalendarIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { format } from "date-fns";
+
+// ✅ Day Picker import
+import { DayPicker } from 'react-day-picker';
+import 'react-day-picker/dist/style.css';
 
 const BasicInfo = () => {
   const [formData, setFormData] = useState({
@@ -70,10 +75,8 @@ const BasicInfo = () => {
     setIsLoading(true);
 
     try {
-      // Simulate file upload
       let resumeUrl = '';
       if (formData.resumeFile) {
-        // In a real app, you'd upload to a file storage service
         resumeUrl = URL.createObjectURL(formData.resumeFile);
       }
 
@@ -184,11 +187,13 @@ const BasicInfo = () => {
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0">
-                  <Calendar
+                  <DayPicker
                     mode="single"
                     selected={formData.dateOfBirth}
                     onSelect={(date) => handleInputChange('dateOfBirth', date)}
-                    initialFocus
+                    captionLayout="dropdown"
+                    fromYear={1970}
+                    toYear={new Date().getFullYear()}
                   />
                 </PopoverContent>
               </Popover>
