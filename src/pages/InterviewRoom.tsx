@@ -216,44 +216,6 @@ const InterviewRoom = () => {
 
               {analysisResult && !isAnalyzing && (
                 <div className="space-y-4">
-                  <div className="bg-primary/5 border border-primary/20 rounded-lg p-4">
-                    <h3 className="font-medium mb-2">Analysis Results</h3>
-                    <div className="space-y-3">
-                      {/* Displaying raw JSON for debugging, you'll want to parse this */}
-                      <pre className="whitespace-pre-wrap text-sm bg-muted p-3 rounded overflow-auto max-h-96">
-                        {JSON.stringify(analysisResult, null, 2)}
-                      </pre>
-                      {/* Attempt to display specific parts if they exist (assuming backend structure) */}
-                      {analysisResult.extracted_fields?.fit_analysis && ( // Check for extracted_fields and then fit_analysis
-                        <div className="mt-4">
-                          <h4 className="font-medium mb-2">Fit Analysis:</h4>
-                          <p className="text-sm">{analysisResult.extracted_fields.fit_analysis}</p>
-                        </div>
-                      )}
-                      {analysisResult.extracted_fields?.suitability_score_out_of_100 && (
-                        <div className="mt-4">
-                          <h4 className="font-medium mb-2">Suitability Score:</h4>
-                          <div className="flex items-center space-x-2">
-                            <div className="bg-primary text-primary-foreground px-2 py-1 rounded">
-                              {analysisResult.extracted_fields.suitability_score_out_of_100} / 100
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                      {analysisResult.questionnaire_prompt && Array.isArray(analysisResult.questionnaire_prompt) && (
-                        <div className="mt-4">
-                          <h4 className="font-medium mb-2">Generated Questions:</h4>
-                          <ul className="list-disc list-inside space-y-1">
-                            {analysisResult.questionnaire_prompt.map((q: any, index: number) => (
-                              <li key={q.id || index} className="text-sm">
-                                <strong>{q.type}:</strong> {q.question}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                    </div>
-                  </div>
                   <Button onClick={startAnalysis} variant="outline" className="transition-all duration-300 hover:scale-105">
                     Analyze Again
                   </Button>
