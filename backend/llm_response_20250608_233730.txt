@@ -1,0 +1,103 @@
+```json
+{
+  "Extracted_fields": {
+    "name": "Budda Pallavi",
+    "email": "buddapallavi057@gmail.com",
+    "graduation_college": "Sardar Vallabhbhai National Institute of Technology, Surat",
+    "degree": "B.Tech., AI",
+    "certifications": [
+      "Code Wars, Techno-Managerial Extravaganza MINDBEND, NIT Surat (Mar 2024)",
+      "Web Wonders Program, Nexus, NIT Surat (Jul 2024)",
+      "NSS Unity Day Games, NSS, NIT Surat (Sep 2024)"
+    ],
+    "skills": [
+      "Python",
+      "C",
+      "C++",
+      "HTML5",
+      "CSS",
+      "Javascript",
+      "MySQL",
+      "GitHub",
+      "Linux",
+      "Data Structures",
+      "Database Management Systems",
+      "Design and Analysis of Algorithms"
+    ],
+    "projects": [
+      "Forestry: Built a responsive website using HTML, CSS, and JavaScript to raise awareness about forestry. Included features like the Tree Equity Score and an interactive quiz.",
+      "Shopping Cart: Developed shopping cart logic in C++ and integrated MySQL for product inventory management and order processing."
+    ],
+    "current_company": "N/A",
+    "current_designation": "Student",
+    "previous_companies": [],
+    "current_location": "Surat, India",
+    "total_experience_years": "0 (College Student)",
+    "most_recent_company": "N/A",
+    "most_recent_role": "N/A",
+    "strengths": [
+      "Web development",
+      "C++ programming",
+      "Community Service",
+      "Teamwork"
+    ],
+    "weaknesses": [
+      "Limited professional experience"
+    ],
+    "suitability_score_out_of_100": "65",
+    "fit_analysis": "Pallavi is a promising candidate with a strong academic background and some project experience. Her skills align with software engineering roles, but she lacks significant professional experience. The suitability score reflects her potential and areas for growth. More information is needed to give a comprehensive suitability score and fit analysis."
+  },
+  "Questionnaire_prompt": [
+    {
+      "id": 1,
+      "question": "Tell me about a time when you had to learn a new technology or skill quickly to complete a project. How did you approach it, and what were the results?",
+      "type": "HR Round"
+    },
+    {
+      "id": 2,
+      "question": "Describe your experience with teamwork and collaboration, particularly within the context of the NSS volunteer activities. Can you provide a specific example of a time you had to resolve a conflict or disagreement within a team?",
+      "type": "HR Round"
+    },
+    {
+      "id": 3,
+      "question": "Why are you interested in working at Google, and what aspects of our company culture appeal to you most?",
+      "type": "HR Round"
+    },
+    {
+      "id": 4,
+      "question": "Discuss your involvement in the KASHISH event at NIT Surat. How did your role as a committee member contribute to the event's success, and what did you learn from the experience?",
+      "type": "HR Round"
+    },
+    {
+      "id": 5,
+      "question": "In your Forestry project, you used HTML, CSS, and JavaScript to raise awareness about forestry. How did you ensure the website was user-friendly and accessible to a diverse audience?",
+      "type": "HR Round"
+    },
+    {
+      "id": 6,
+      "question": "Can you describe a situation where you faced a significant challenge in one of your projects (either Forestry or Shopping Cart) and how you overcame it?",
+      "type": "HR Round"
+    },
+    {
+      "id": 7,
+      "question": "How do you stay up-to-date with the latest developments and trends in the field of Artificial Intelligence and software engineering?",
+      "type": "HR Round"
+    },
+    {
+      "id": 8,
+      "question": "What are your long-term career goals, and how do you see a role at Google contributing to your achieving them?",
+      "type": "HR Round"
+    },
+    {
+      "id": 9,
+      "question": "Tell me about a time you took initiative to improve a process or solve a problem, either in your academic work or extracurricular activities.",
+      "type": "HR Round"
+    },
+    {
+      "id": 10,
+      "question": "Describe a time when you had to manage multiple responsibilities or projects simultaneously. How did you prioritize tasks and ensure you met all deadlines?",
+      "type": "HR Round"
+    }
+  ]
+}
+```

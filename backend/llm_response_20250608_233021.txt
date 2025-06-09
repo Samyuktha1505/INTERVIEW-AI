@@ -1,0 +1,88 @@
+```json
+{
+  "Extracted_fields": {
+    "name": "Budda Pallavi",
+    "email": "buddapallavi057@gmail.com",
+    "graduation_college": "Sardar Vallabhbhai National Institute of Technology, Surat",
+    "degree": "B.Tech., AI",
+    "certifications": [
+      "Code Wars, Techno-Managerial Extravaganza MINDBEND, NIT Surat",
+      "Web Wonders Program, Nexus, NIT Surat",
+      "NSS Unity Day Games, NSS, NIT Surat"
+    ],
+    "skills": [
+      "Python",
+      "C",
+      "C++",
+      "HTML5",
+      "CSS",
+      "Javascript",
+      "MySQL",
+      "GitHub",
+      "Linux"
+    ],
+    "projects": [
+      "Forestry: Built a responsive website using HTML, CSS, and JavaScript to raise awareness about forestry. The website offers unique features like the Tree Equity Score and an interactive quiz to help users learn more about the Forest Department. Included detailed information on local wildlife sanctuaries and recent initiatives undertaken to promote afforestation.",
+      "Shopping Cart: Developed shopping cart logic in C++ to manage user interactions and pricing calculations. Integrated MySQL for product inventory management and order processing."
+    ],
+    "current_company": null,
+    "current_designation": null,
+    "previous_companies": [],
+    "current_location": "Surat",
+    "total_experience_years": "0",
+    "most_recent_company": null,
+    "most_recent_role": null,
+    "strengths": [
+      "Web Development",
+      "Database Management"
+    ],
+    "weaknesses": [
+      "Limited professional experience"
+    ],
+    "suitability_score_out_of_100": "75",
+    "fit_analysis": "Promising candidate with a strong academic background and relevant project experience. Needs further assessment on system design and problem-solving skills. Good foundation in key technologies."
+  },
+  "Questionnaire_prompt": [
+    {
+      "id": 1,
+      "question": "Given your experience with the Forestry project, describe how you would design a scalable system to collect and analyze real-time environmental data from various sensors deployed in a forest.",
+      "type": "System Design"
+    },
+    {
+      "id": 2,
+      "Building on your Shopping Cart project, how would you design a distributed system for managing a large e-commerce platform's inventory across multiple warehouses, ensuring data consistency and minimal latency?",
+      "type": "System Design"
+    },
+    {
+      "id": 3,
+      "Imagine you are tasked with designing a recommendation system for Amazon that suggests relevant forestry-related products to customers. Outline the key components and algorithms you would use, focusing on scalability and personalization.",
+      "type": "System Design"
+    },
+    {
+      "id": 4,
+      "Describe your approach to designing a system that can handle a sudden surge in traffic to a website like the Forestry awareness site you developed, focusing on load balancing, caching, and auto-scaling strategies.",
+      "type": "System Design"
+    },
+    {
+      "id": 5,
+      "How would you design a system to monitor and prevent fraudulent activities in an online shopping cart application, considering various attack vectors and mitigation techniques?",
+      "type": "System Design"
+    },
+    {
+      "id": 6,
+      "Considering your skills in web development and database management, how would you approach designing a system for managing and visualizing large datasets of wildlife populations and their habitats, ensuring efficient querying and data analysis?",
+      "type": "System Design"
+    },
+    {
+      "id": 7,
+      "Amazon is increasingly investing in AI-powered solutions. How would you design a system that uses machine learning to optimize the delivery routes for Amazon's logistics network, considering real-time traffic conditions, weather patterns, and delivery time constraints?",
+      "type": "System Design"
+    },
+    {
+      "id": 8,
+      "Given Amazon's focus on customer obsession, describe how you would design a system that proactively identifies and resolves potential issues in a large-scale e-commerce platform, ensuring a seamless and reliable shopping experience for customers.",
+      "type": "System Design"
+    }
+  ]
+}
+```
