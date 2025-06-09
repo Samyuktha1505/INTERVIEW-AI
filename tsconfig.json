@@ -5,15 +5,30 @@
     { "path": "./tsconfig.node.json" }
   ],
   "compilerOptions": {
+    // --- Merged options from both projects ---
+    "target": "es2022",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "jsx": "react-jsx",
+    "module": "esnext",
+    "moduleResolution": "node",
+
+    // --- Strictness enabled from LIVE-API-WEB-CONSOLE (Best Practice) ---
+    // This may show new type errors in your old code, which is a good opportunity to fix them.
+    "strict": true, 
+
+    // --- Important flags for compatibility and modern tooling ---
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "allowJs": true,
+
+    // --- Path alias preserved from INTERVIEW-AI ---
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]
-    },
-    "noImplicitAny": false,
-    "noUnusedParameters": false,
-    "skipLibCheck": true,
-    "allowJs": true,
-    "noUnusedLocals": false,
-    "strictNullChecks": false
+    }
   }
 }
