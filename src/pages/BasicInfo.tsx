@@ -16,7 +16,7 @@ import { DayPicker } from 'react-day-picker';
 import 'react-day-picker/dist/style.css'; // Make sure this CSS is accessible
 
 const BasicInfo = () => {
-  // State to hold all form data, including the resume file
+  // State to hold all form data, including the resume file and country code
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -24,7 +24,8 @@ const BasicInfo = () => {
     dateOfBirth: undefined as Date | undefined, // Date object for DayPicker
     collegeName: '',
     yearsOfExperience: 0,
-    resumeFile: null as File | null // To store the selected File object
+    resumeFile: null as File | null, // To store the selected File object
+    countryCode: '+91' // Added countryCode with a default value (e.g., India)
   });
 
   const [isLoading, setIsLoading] = useState(false); // Loading state for button
@@ -38,7 +39,7 @@ const BasicInfo = () => {
     }
   }, [user, navigate]);
 
-  // Generic handler for text and select inputs
+  // Generic handler for text, select, and radio inputs
   const handleInputChange = (field: string, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
@@ -64,8 +65,14 @@ const BasicInfo = () => {
 
   // Client-side form validation
   const validateForm = () => {
-    if (!formData.firstName.trim() || !formData.lastName.trim() || !formData.gender ||
-        !formData.dateOfBirth || !formData.collegeName.trim()) { // Trim whitespace
+    if (
+      !formData.firstName.trim() ||
+      !formData.lastName.trim() ||
+      !formData.gender ||
+      !formData.dateOfBirth ||
+      !formData.collegeName.trim() ||
+      !formData.countryCode // Added countryCode to validation
+    ) {
       toast({
         title: "Validation Error",
         description: "Please fill in all required fields.",
@@ -111,6 +118,7 @@ const BasicInfo = () => {
       form.append("date_of_birth", formData.dateOfBirth ? format(formData.dateOfBirth, 'yyyy-MM-dd') : "");
       form.append("college_name", formData.collegeName);
       form.append("years_of_experience", formData.yearsOfExperience.toString()); // Convert number to string
+      form.append("country_code", formData.countryCode); // Append country code to FormData
       if (formData.resumeFile) {
         form.append("resume", formData.resumeFile); // Append the actual File object
       }
@@ -166,7 +174,6 @@ const BasicInfo = () => {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* First Name & Last Name */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="firstName">First Name *</Label>
@@ -192,7 +199,33 @@ const BasicInfo = () => {
               </div>
             </div>
 
-            {/* Gender Radio Group */}
+            {/* NEW: Country Code Select */}
+            <div className="space-y-2">
+              <Label htmlFor="countryCode">Country Code *</Label>
+              <Select
+                value={formData.countryCode}
+                onValueChange={(value) => handleInputChange('countryCode', value)}
+              >
+                <SelectTrigger className="transition-all duration-300 hover:scale-105">
+                  <SelectValue placeholder="Select country code" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="+1">🇺🇸 +1 (USA/Canada)</SelectItem>
+                  <SelectItem value="+44">🇬🇧 +44 (UK)</SelectItem>
+                  <SelectItem value="+91">🇮🇳 +91 (India)</SelectItem>
+                  <SelectItem value="+49">🇩🇪 +49 (Germany)</SelectItem>
+                  <SelectItem value="+33">🇫🇷 +33 (France)</SelectItem>
+                  <SelectItem value="+81">🇯🇵 +81 (Japan)</SelectItem>
+                  {/* Add more country codes here as needed */}
+                  <SelectItem value="+86">🇨🇳 +86 (China)</SelectItem>
+                  <SelectItem value="+61">🇦🇺 +61 (Australia)</SelectItem>
+                  <SelectItem value="+52">🇲🇽 +52 (Mexico)</SelectItem>
+                  <SelectItem value="+55">🇧🇷 +55 (Brazil)</SelectItem>
+                  <SelectItem value="+7">🇷🇺 +7 (Russia)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
             <div className="space-y-2">
               <Label>Gender *</Label>
               <RadioGroup
@@ -215,7 +248,6 @@ const BasicInfo = () => {
               </RadioGroup>
             </div>
 
-            {/* Date of Birth Picker */}
             <div className="space-y-2">
               <Label>Date of Birth *</Label>
               <Popover>
@@ -236,14 +268,13 @@ const BasicInfo = () => {
                     selected={formData.dateOfBirth}
                     onSelect={(date) => handleInputChange('dateOfBirth', date)}
                     captionLayout="dropdown"
-                    fromYear={1970} // Example start year
-                    toYear={new Date().getFullYear()} // Current year as end year
+                    fromYear={1970}
+                    toYear={new Date().getFullYear()}
                   />
                 </PopoverContent>
               </Popover>
             </div>
 
-            {/* College Name */}
             <div className="space-y-2">
               <Label htmlFor="collegeName">College Name *</Label>
               <Input
@@ -256,11 +287,10 @@ const BasicInfo = () => {
               />
             </div>
 
-            {/* Years of Experience Select */}
             <div className="space-y-2">
               <Label>Years of Experience</Label>
               <Select
-                value={formData.yearsOfExperience.toString()} // Convert number to string for Select component
+                value={formData.yearsOfExperience.toString()}
                 onValueChange={(value) => handleInputChange('yearsOfExperience', parseInt(value))}
               >
                 <SelectTrigger className="transition-all duration-300 hover:scale-105">
@@ -277,19 +307,18 @@ const BasicInfo = () => {
               </Select>
             </div>
 
-            {/* Resume Upload Section */}
             <div className="space-y-2">
               <Label htmlFor="resume">Resume Upload</Label>
               <div className="relative">
                 <Input
                   id="resume"
                   type="file"
-                  accept=".pdf,.doc,.docx" // Specify accepted file types
+                  accept=".pdf,.doc,.docx"
                   onChange={handleFileChange}
-                  className="hidden" // Hide the default file input
+                  className="hidden"
                 />
                 <Label
-                  htmlFor="resume" // Link label to hidden input
+                  htmlFor="resume"
                   className="flex items-center justify-center w-full h-32 border-2 border-dashed border-border rounded-lg cursor-pointer hover:bg-secondary/50 transition-all duration-300 hover:scale-105"
                 >
                   <div className="text-center">
@@ -302,11 +331,10 @@ const BasicInfo = () => {
               </div>
             </div>
 
-            {/* Submit Button */}
             <Button
               type="submit"
               className="w-full transition-all duration-300 hover:scale-105"
-              disabled={isLoading} // Disable button during submission
+              disabled={isLoading}
             >
               {isLoading ? "Completing Profile..." : "Complete Profile"}
             </Button>

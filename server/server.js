@@ -100,16 +100,14 @@ app.post("/api/basic-info", (req, res) => {
       date_of_birth,
       college_name,
       years_of_experience,
+      country_code, // ✨ NEW: Destructure country_code from req.body
     } = req.body;
 
     // Get the path of the uploaded file. If no file, resumeUrl will be null.
     const resumeUrl = req.file ? req.file.path : null;
 
     // Basic server-side validation (consider more robust validation library for production)
-    if (!email || !first_name || !last_name || !gender || !date_of_birth || !college_name) {
-      // If resume is optional, don't include it in this check
-      // If it's mandatory, uncomment the resumeUrl check:
-      // || !resumeUrl
+    if (!email || !first_name || !last_name || !gender || !date_of_birth || !college_name || !country_code) {
       return res.status(400).json({ success: false, error: "Missing required profile fields." });
     }
 
@@ -122,6 +120,7 @@ app.post("/api/basic-info", (req, res) => {
         college_name = ?,
         years_of_experience = ?,
         resume_url = ?,
+        country_code = ?, -- ✨ NEW: Add country_code to the UPDATE statement
         updated_at = NOW()
       WHERE email = ?
     `;
@@ -133,7 +132,8 @@ app.post("/api/basic-info", (req, res) => {
       date_of_birth,
       college_name,
       years_of_experience,
-      resumeUrl, // Use the path of the uploaded resume
+      resumeUrl,
+      country_code, // ✨ NEW: Add country_code to the values array
       email,
     ];
 
