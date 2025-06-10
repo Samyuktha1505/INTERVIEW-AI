@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,6 +22,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { useInterview } from "../contexts/InterviewContext";
 import { toast } from "@/hooks/use-toast";
 import { Upload } from "lucide-react";
+import { analyzeResume } from "../services/resumeAnalysis";
 
 interface CreateRoomModalProps {
   open: boolean;
@@ -41,6 +43,7 @@ const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ open, onOpenChange })
   const [isLoading, setIsLoading] = useState(false);
   const { user } = useAuth();
   const { createRoom } = useInterview();
+  const navigate = useNavigate();
 
   const interviewTypes = [
     'Technical Interview',
@@ -61,7 +64,7 @@ const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ open, onOpenChange })
       const allowedTypes = [
         'application/pdf',
         'application/msword',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       ];
       if (allowedTypes.includes(file.type)) {
         setFormData((prev) => ({ ...prev, resumeFile: file }));
@@ -76,7 +79,7 @@ const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ open, onOpenChange })
   };
 
   const validateForm = () => {
-    const { currentDesignation, targetRole, targetCompany, interviewType, sessionInterval, resumeFile } = formData;
+    const { currentDesignation, targetRole, targetCompany, interviewType, resumeFile } = formData;
 
     if (!currentDesignation || !targetRole || !targetCompany || !interviewType) {
       toast({
@@ -96,8 +99,8 @@ const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ open, onOpenChange })
       return false;
     }
 
-    if (sessionInterval) {
-      const val = Number(sessionInterval);
+    if (formData.sessionInterval) {
+      const val = Number(formData.sessionInterval);
       if (isNaN(val) || val < 5 || val > 180) {
         toast({
           title: "Validation Error",
@@ -119,8 +122,14 @@ const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ open, onOpenChange })
 
     try {
       let resumeUrl = user?.resumeUrl || '';
+      let resumeFile = formData.resumeFile;
+
       if (formData.resumeFile) {
         resumeUrl = URL.createObjectURL(formData.resumeFile);
+      } else if (user?.resumeUrl) {
+        const response = await fetch(user.resumeUrl);
+        const blob = await response.blob();
+        resumeFile = new File([blob], 'resume.pdf', { type: 'application/pdf' });
       }
 
       const roomData = {
@@ -133,27 +142,32 @@ const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ open, onOpenChange })
         resumeUrl,
       };
 
-      createRoom(roomData);
+      const roomId = createRoom(roomData);
+
+      if (resumeFile) {
+        const requestData = {
+          resume: resumeFile,
+          targetRole: formData.targetRole,
+          targetCompany: formData.targetCompany,
+          interviewType: formData.interviewType,
+          yearsOfExperience: formData.yearsOfExperience.toString(),
+          currentDesignation: formData.currentDesignation,
+          sessioninterval: formData.sessionInterval ? Number(formData.sessionInterval) : undefined
+        };
+
+        await analyzeResume(requestData);
+      }
 
       toast({
-        title: "Interview room created",
-        description: "Your interview room is ready!",
+        title: "Room created successfully!",
+        description: "Your interview room is ready.",
       });
 
       onOpenChange(false);
-      setFormData({
-        currentDesignation: '',
-        targetRole: '',
-        targetCompany: '',
-        yearsOfExperience: 0,
-        sessionInterval: '',
-        interviewType: '',
-        resumeFile: null,
-      });
-    } catch (error) {
+    } catch (error: any) {
       toast({
         title: "Error",
-        description: "Failed to create interview room",
+        description: error.message || "Failed to create interview room",
         variant: "destructive",
       });
     } finally {
@@ -213,9 +227,6 @@ const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ open, onOpenChange })
               min={0}
               step={1}
               className="w-full"
-              aria-valuemin={0}
-              aria-valuemax={20}
-              aria-valuenow={formData.yearsOfExperience}
             />
           </div>
 
@@ -237,6 +248,7 @@ const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ open, onOpenChange })
             <Select
               value={formData.interviewType}
               onValueChange={(value) => handleInputChange('interviewType', value)}
+              required
             >
               <SelectTrigger>
                 <SelectValue placeholder="Select interview type" />
@@ -252,13 +264,12 @@ const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ open, onOpenChange })
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="resume">Resume (Required for Start Interview) *</Label>
+            <Label htmlFor="resume">Resume *</Label>
             {user?.resumeUrl && !formData.resumeFile && (
-              <p className="text-sm text-muted-foreground">Upload a new resume file for analysis</p>
+              <p className="text-sm text-muted-foreground">Using your previously uploaded resume</p>
             )}
             <div className="relative">
               <Input
-                key={formData.resumeFile ? formData.resumeFile.name : 'empty'}
                 id="resume"
                 type="file"
                 accept=".pdf,.doc,.docx"
@@ -272,7 +283,7 @@ const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ open, onOpenChange })
                 <div className="text-center">
                   <Upload className="h-6 w-6 mx-auto mb-1 text-muted-foreground" />
                   <p className="text-xs text-muted-foreground">
-                    {formData.resumeFile ? formData.resumeFile.name : "Upload resume for analysis"}
+                    {formData.resumeFile ? formData.resumeFile.name : "Upload resume (PDF/DOC/DOCX)"}
                   </p>
                 </div>
               </Label>
@@ -285,7 +296,7 @@ const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ open, onOpenChange })
               className="w-full"
               disabled={isLoading}
             >
-              {isLoading ? "Saving..." : "Save Room"}
+              {isLoading ? "Creating room..." : "Create Room"}
             </Button>
           </div>
         </form>
