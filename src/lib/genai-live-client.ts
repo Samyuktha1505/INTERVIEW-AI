@@ -34,6 +34,7 @@ import { difference } from "lodash";
 import { LiveClientOptions, StreamingLog } from "../types"; // Ensure these types are correctly defined
 import { base64ToArrayBuffer } from "./utils";
 import { SessionTranscription } from "./session-transcription";
+import { useChatStore } from "./store-chat";
 
 interface StoredSessionHandle {
   handle: string;
@@ -382,6 +383,7 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
     if (message.serverContent?.inputTranscription?.text) {
       const transcribedText = message.serverContent.inputTranscription.text;
       SessionTranscription.handleInputTranscription(transcribedText);
+      useChatStore.getState().addMessage("user", transcribedText);
       return;
     }
 
@@ -389,6 +391,7 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
     if (message.serverContent?.outputTranscription?.text) {
       const transcribedText = message.serverContent.outputTranscription.text;
       SessionTranscription.handleOutputTranscription(transcribedText);
+      useChatStore.getState().addMessage("agent", transcribedText);
       return;
     }
 

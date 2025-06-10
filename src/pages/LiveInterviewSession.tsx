@@ -27,11 +27,17 @@ const LiveInterviewSession = () => {
   const [videoStream, setVideoStream] = useState<MediaStream | null>(null);
 
   return (
-    <div className="App"> {/* You might want to use a more specific className here */}
+    <div className="App">
+      {" "}
+      {/* You might want to use a more specific className here */}
       <LiveAPIProvider options={apiOptions}>
-        <div className="streaming-console">
-          <SidePanel />
-          <main>
+        <div className="streaming-console flex h-screen bg-gray-100">
+          <aside
+            className="w-72 lg:w-96 flex-shrink-0 h-full"
+          >
+            <SidePanel />
+          </aside>
+          <main className="flex-grow h-full overflow-y-auto">
             <div className="main-app-area">
               <Altair />
               <video
@@ -57,6 +63,6 @@ const LiveInterviewSession = () => {
       </LiveAPIProvider>
     </div>
   );
-}
+};
 
 export default LiveInterviewSession;

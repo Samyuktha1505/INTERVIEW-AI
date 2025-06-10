@@ -1,160 +1,141 @@
-/**
- * Copyright 2024 Google LLC
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
-import "./react-select.scss";
-import cn from "classnames";
-import { useEffect, useRef, useState } from "react";
-import { RiSidebarFoldLine, RiSidebarUnfoldLine } from "react-icons/ri";
-import Select from "react-select";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { Captions, CaptionsOff, Send } from "lucide-react";
+import React, { useEffect, useRef, useState } from "react";
 import { useLiveAPIContext } from "../../contexts/LiveAPIContext";
-import { useLoggerStore } from "../../lib/store-logger";
-import Logger, { LoggerFilterType } from "../logger/Logger";
-import "./side-panel.scss";
+import { ChatMessage, useChatStore } from "../../lib/store-chat"; // <-- IMPORT THE NEW STORE
 
-const filterOptions = [
-  { value: "conversations", label: "Conversations" },
-  { value: "tools", label: "Tool Use" },
-  { value: "none", label: "All" },
-];
+// --- Helper component for a single chat bubble (no changes) ---
+const ChatBubble = ({ message }: { message: ChatMessage }) => {
+  const isUser = message.author === "user";
+  return (
+    <div
+      className={`mb-4 flex max-w-lg flex-col ${
+        isUser ? "self-end" : "self-start"
+      }`}
+    >
+      <div
+        className={`rounded-lg px-4 py-2 ${
+          isUser
+            ? "rounded-br-none bg-blue-500 text-white"
+            : "rounded-bl-none bg-slate-200 text-slate-800"
+        }`}
+      >
+        <p className="whitespace-pre-wrap">{message.content}</p>
+      </div>
+    </div>
+  );
+};
 
 export default function SidePanel() {
-  const { connected, client } = useLiveAPIContext();
-  const [open, setOpen] = useState(true);
-  const loggerRef = useRef<HTMLDivElement>(null);
-  const loggerLastHeightRef = useRef<number>(-1);
-  const { log, logs } = useLoggerStore();
+  const { client, connected } = useLiveAPIContext();
+  // --- Read messages directly from our new, clean chat store ---
+  const chatMessages = useChatStore((state) => state.messages);
 
+  const [showSubtitles, setShowSubtitles] = useState(true);
   const [textInput, setTextInput] = useState("");
-  const [selectedOption, setSelectedOption] = useState<{
-    value: string;
-    label: string;
-  } | null>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const transcriptEndRef = useRef<HTMLDivElement>(null);
 
-  //scroll the log to the bottom when new logs come in
   useEffect(() => {
-    if (loggerRef.current) {
-      const el = loggerRef.current;
-      const scrollHeight = el.scrollHeight;
-      if (scrollHeight !== loggerLastHeightRef.current) {
-        el.scrollTop = scrollHeight;
-        loggerLastHeightRef.current = scrollHeight;
-      }
+    if (showSubtitles) {
+      transcriptEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
-  }, [logs]);
-
-  // listen for log events and store them
-  useEffect(() => {
-    client.on("log", log);
-    return () => {
-      client.off("log", log);
-    };
-  }, [client, log]);
+  }, [chatMessages, showSubtitles]);
 
   const handleSubmit = () => {
+    if (!textInput.trim() || !connected) return;
+    
+    // When the user sends a text message, we add it to our store
+    // NOTE: If you also get user's spoken words transcribed, you'll need to call addMessage there too.
+    useChatStore.getState().addMessage("user", textInput);
     client.send([{ text: textInput }]);
-
     setTextInput("");
-    if (inputRef.current) {
-      inputRef.current.innerText = "";
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit();
     }
   };
 
   return (
-    <div className={`side-panel ${open ? "open" : ""}`}>
-      <header className="top">
-        <h2>Console</h2>
-        {open ? (
-          <button className="opener" onClick={() => setOpen(false)}>
-            <RiSidebarFoldLine color="#b4b8bb" />
-          </button>
-        ) : (
-          <button className="opener" onClick={() => setOpen(true)}>
-            <RiSidebarUnfoldLine color="#b4b8bb" />
-          </button>
-        )}
-      </header>
-      <section className="indicators">
-        <Select
-          className="react-select"
-          classNamePrefix="react-select"
-          styles={{
-            control: (baseStyles) => ({
-              ...baseStyles,
-              background: "var(--Neutral-15)",
-              color: "var(--Neutral-90)",
-              minHeight: "33px",
-              maxHeight: "33px",
-              border: 0,
-            }),
-            option: (styles, { isFocused, isSelected }) => ({
-              ...styles,
-              backgroundColor: isFocused
-                ? "var(--Neutral-30)"
-                : isSelected
-                  ? "var(--Neutral-20)"
-                  : undefined,
-            }),
-          }}
-          defaultValue={selectedOption}
-          options={filterOptions}
-          onChange={(e) => {
-            setSelectedOption(e);
-          }}
-        />
-        <div className={cn("streaming-indicator", { connected })}>
-          {connected
-            ? `🔵${open ? " Streaming" : ""}`
-            : `⏸️${open ? " Paused" : ""}`}
-        </div>
-      </section>
-      <div className="side-panel-container" ref={loggerRef}>
-        <Logger
-          filter={(selectedOption?.value as LoggerFilterType) || "none"}
-        />
+    <div className="flex h-full flex-col bg-slate-50">
+      {/* Header */}
+      <div className="flex flex-shrink-0 items-center justify-between border-b border-slate-200 p-3">
+        <h3 className="text-lg font-semibold text-slate-800">
+          Agent Transcript
+        </h3>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setShowSubtitles(!showSubtitles)}
+              className="h-8 w-8"
+            >
+              {showSubtitles ? (
+                <CaptionsOff className="h-5 w-5 text-slate-600" />
+              ) : (
+                <Captions className="h-5 w-5 text-slate-600" />
+              )}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>{showSubtitles ? "Hide Transcript" : "Show Transcript"}</p>
+          </TooltipContent>
+        </Tooltip>
       </div>
-      <div className={cn("input-container", { disabled: !connected })}>
-        <div className="input-content">
-          <textarea
-            className="input-area"
-            ref={inputRef}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                e.stopPropagation();
-                handleSubmit();
-              }
-            }}
-            onChange={(e) => setTextInput(e.target.value)}
-            value={textInput}
-          ></textarea>
-          <span
-            className={cn("input-content-placeholder", {
-              hidden: textInput.length,
-            })}
-          >
-            Type&nbsp;something...
-          </span>
 
-          <button
-            className="send-button material-symbols-outlined filled"
+      {/* Transcript Area */}
+      <div className="flex-grow overflow-y-auto p-4">
+        {showSubtitles ? (
+          <div className="flex flex-col">
+            {chatMessages.map((message) => (
+              <ChatBubble key={message.id} message={message} />
+            ))}
+            {chatMessages.length === 0 && (
+              <p className="text-center text-sm text-slate-400">
+                Waiting for the conversation to start...
+              </p>
+            )}
+            <div ref={transcriptEndRef} />
+          </div>
+        ) : (
+          <div className="flex h-full items-center justify-center text-slate-400">
+            <p>Transcript is hidden.</p>
+          </div>
+        )}
+      </div>
+
+      {/* Text Input Area */}
+      <div className="flex-shrink-0 border-t border-slate-200 p-3">
+        <div className="relative">
+          <Textarea
+            value={textInput}
+            onChange={(e) => setTextInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={
+              connected ? "Type a message..." : "Connect to start typing"
+            }
+            className="resize-none pr-12"
+            rows={1}
+            disabled={!connected}
+          />
+          <Button
+            type="submit"
+            size="icon"
+            className="absolute right-2 top-1/2 h-8 w-8 -translate-y-1/2"
             onClick={handleSubmit}
+            disabled={!connected || !textInput.trim()}
           >
-            send
-          </button>
+            <Send className="h-4 w-4" />
+          </Button>
         </div>
       </div>
     </div>

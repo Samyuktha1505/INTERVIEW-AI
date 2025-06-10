@@ -10,6 +10,10 @@ export class SessionTranscription {
   private static lastAssistantTranscriptionTime: number = 0;
   private static readonly CHUNK_TIMEOUT = 1000; // 1 second timeout for combining chunks
 
+  private static hasContent(text: string): boolean {
+    return text.trim().length > 0;
+  }
+
   static initializeSession() {
     // Generate new session ID
     this.currentSessionId = `session_${new Date().toISOString().replace(/[:.]/g, '-')}`;
@@ -22,9 +26,7 @@ export class SessionTranscription {
   }
 
   static addTranscription(role: 'user' | 'assistant', content: string) {
-    if (!this.currentSessionId) {
-      this.initializeSession();
-    }
+    if (!this.currentSessionId || !this.hasContent(content)) return;
 
     const timestamp = new Date().toLocaleString();
     
@@ -35,7 +37,7 @@ export class SessionTranscription {
       this.isFirstEntry = false;
     }
 
-    const entry = `[${timestamp}] ${role.toUpperCase()}:\n${content}\n\n`;
+    const entry = `[${timestamp}] ${role.toUpperCase()}:\n${content.trim()}\n\n`;
     this.transcriptionBuffer.push(entry);
   }
 
@@ -61,14 +63,14 @@ export class SessionTranscription {
   }
 
   static handleInputTranscription(text: string) {
-    if (!this.currentSessionId) return;
+    if (!this.currentSessionId || !this.hasContent(text)) return;
 
     const currentTime = Date.now();
     
     // If this is a new chunk (based on time difference)
     if (currentTime - this.lastUserTranscriptionTime > this.CHUNK_TIMEOUT) {
       // If we have accumulated text, add it as a complete entry
-      if (this.currentUserChunk.trim()) {
+      if (this.hasContent(this.currentUserChunk)) {
         const timestamp = new Date(this.lastUserTranscriptionTime).toLocaleString();
         const entry = `[${timestamp}] USER:\n${this.currentUserChunk.trim()}\n\n`;
         this.transcriptionBuffer.push(entry);
@@ -84,14 +86,14 @@ export class SessionTranscription {
   }
 
   static handleOutputTranscription(text: string) {
-    if (!this.currentSessionId) return;
+    if (!this.currentSessionId || !this.hasContent(text)) return;
 
     const currentTime = Date.now();
     
     // If this is a new chunk (based on time difference)
     if (currentTime - this.lastAssistantTranscriptionTime > this.CHUNK_TIMEOUT) {
       // If we have accumulated text, add it as a complete entry
-      if (this.currentAssistantChunk.trim()) {
+      if (this.hasContent(this.currentAssistantChunk)) {
         const timestamp = new Date(this.lastAssistantTranscriptionTime).toLocaleString();
         const entry = `[${timestamp}] ASSISTANT:\n${this.currentAssistantChunk.trim()}\n\n`;
         this.transcriptionBuffer.push(entry);
@@ -110,14 +112,14 @@ export class SessionTranscription {
     if (!this.currentSessionId) return;
 
     // Add any remaining user transcription chunk
-    if (this.currentUserChunk.trim()) {
+    if (this.hasContent(this.currentUserChunk)) {
       const timestamp = new Date(this.lastUserTranscriptionTime).toLocaleString();
       const entry = `[${timestamp}] USER:\n${this.currentUserChunk.trim()}\n\n`;
       this.transcriptionBuffer.push(entry);
     }
 
     // Add any remaining assistant transcription chunk
-    if (this.currentAssistantChunk.trim()) {
+    if (this.hasContent(this.currentAssistantChunk)) {
       const timestamp = new Date(this.lastAssistantTranscriptionTime).toLocaleString();
       const entry = `[${timestamp}] ASSISTANT:\n${this.currentAssistantChunk.trim()}\n\n`;
       this.transcriptionBuffer.push(entry);
