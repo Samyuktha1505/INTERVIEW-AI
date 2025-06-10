@@ -1,6 +1,4 @@
-// BasicInfo.tsx
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,109 +7,152 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "../contexts/AuthContext";
-import { toast } from "@/hooks/use-toast";
+import { useAuth } from "../contexts/AuthContext"; // Adjust path as needed
+import { toast } from "@/hooks/use-toast"; // Adjust path as needed
 import { Upload, CalendarIcon } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/utils"; // Adjust path as needed
 import { format } from "date-fns";
-
-// ✅ Day Picker import
 import { DayPicker } from 'react-day-picker';
-import 'react-day-picker/dist/style.css';
+import 'react-day-picker/dist/style.css'; // Make sure this CSS is accessible
 
 const BasicInfo = () => {
+  // State to hold all form data, including the resume file
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
     gender: '',
-    dateOfBirth: undefined as Date | undefined,
+    dateOfBirth: undefined as Date | undefined, // Date object for DayPicker
     collegeName: '',
     yearsOfExperience: 0,
-    resumeFile: null as File | null
+    resumeFile: null as File | null // To store the selected File object
   });
-  const [isLoading, setIsLoading] = useState(false);
-  const { updateProfile, user } = useAuth();
-  const navigate = useNavigate();
 
-  React.useEffect(() => {
+  const [isLoading, setIsLoading] = useState(false); // Loading state for button
+  const { updateProfile, user } = useAuth(); // Auth context for user info and profile updates
+  const navigate = useNavigate(); // For navigation after profile completion
+
+  // Redirect if profile is already complete
+  useEffect(() => {
     if (user?.isProfileComplete) {
       navigate('/dashboard');
     }
   }, [user, navigate]);
 
+  // Generic handler for text and select inputs
+  const handleInputChange = (field: string, value: any) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  // Handler for file input change
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    const file = e.target.files?.[0]; // Get the first selected file
     if (file) {
-      if (file.type === 'application/pdf' || file.type.includes('document')) {
+      // Basic client-side file type validation
+      const allowedMimes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+      if (allowedMimes.includes(file.type)) {
         setFormData(prev => ({ ...prev, resumeFile: file }));
       } else {
         toast({
           title: "Invalid file type",
-          description: "Please upload a PDF or DOC file",
+          description: "Please upload a PDF, DOC, or DOCX file.",
           variant: "destructive",
         });
+        e.target.value = ''; // Clear the file input if invalid
       }
     }
   };
 
+  // Client-side form validation
   const validateForm = () => {
-    if (!formData.firstName || !formData.lastName || !formData.gender || 
-        !formData.dateOfBirth || !formData.collegeName) {
+    if (!formData.firstName.trim() || !formData.lastName.trim() || !formData.gender ||
+        !formData.dateOfBirth || !formData.collegeName.trim()) { // Trim whitespace
       toast({
         title: "Validation Error",
-        description: "Please fill in all required fields",
+        description: "Please fill in all required fields.",
         variant: "destructive",
       });
       return false;
     }
+    // You can add validation for resumeFile here if it's mandatory
+    // e.g., if (!formData.resumeFile) { /* show toast */ return false; }
     return true;
   };
 
+  // Form submission handler
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!validateForm()) return;
-    
-    setIsLoading(true);
+    e.preventDefault(); // Prevent default browser form submission
+    if (!validateForm()) return; // Run client-side validation
+
+    setIsLoading(true); // Set loading state
 
     try {
-      let resumeUrl = '';
+      // Get user email and phone from context. Provide fallbacks if they might be null/undefined.
+      // Make sure 'user' object is reliably populated from your AuthContext upon login/signup.
+      const email = user?.email;
+      if (!email) {
+        toast({
+          title: "Authentication Error",
+          description: "User email not found. Please log in again.",
+          variant: "destructive",
+        });
+        setIsLoading(false);
+        return;
+      }
+      const phone = user?.mobile || ""; // Phone might not be directly used for update, but passed for consistency
+
+      // Create FormData object to send multipart/form-data (required for file uploads)
+      const form = new FormData();
+      form.append("email", email);
+      form.append("phone", phone); // Not strictly needed for update, but included
+      form.append("first_name", formData.firstName); // Match server's expected field name
+      form.append("last_name", formData.lastName);   // Match server's expected field name
+      form.append("gender", formData.gender);
+      // Format date to 'YYYY-MM-DD' string as expected by MySQL DATE type
+      form.append("date_of_birth", formData.dateOfBirth ? format(formData.dateOfBirth, 'yyyy-MM-dd') : "");
+      form.append("college_name", formData.collegeName);
+      form.append("years_of_experience", formData.yearsOfExperience.toString()); // Convert number to string
       if (formData.resumeFile) {
-        resumeUrl = URL.createObjectURL(formData.resumeFile);
+        form.append("resume", formData.resumeFile); // Append the actual File object
       }
 
-      const profileData = {
-        firstName: formData.firstName,
-        lastName: formData.lastName,
-        gender: formData.gender,
-        dateOfBirth: formData.dateOfBirth?.toISOString(),
-        collegeName: formData.collegeName,
-        yearsOfExperience: formData.yearsOfExperience,
-        resumeUrl,
-        isProfileComplete: true
-      };
-
-      updateProfile(profileData);
-      
-      toast({
-        title: "Profile completed successfully",
-        description: "Welcome to InterviewAI!",
+      // Send POST request to your backend API
+      const response = await fetch("http://localhost:3001/api/basic-info", {
+        method: "POST",
+        body: form, // FormData object is passed directly. Browser sets Content-Type automatically.
       });
-      
-      navigate('/dashboard');
+
+      const result = await response.json(); // Parse the JSON response from the server
+
+      if (response.ok && result.success) { // Check both HTTP status and custom success flag
+        // Update user profile in AuthContext
+        updateProfile({
+          ...formData, // Spread existing form data
+          dateOfBirth: formData.dateOfBirth ? format(formData.dateOfBirth, 'yyyy-MM-dd') : "", // Store as string in context
+          isProfileComplete: true // Mark profile as complete
+        });
+
+        toast({
+          title: "Profile completed successfully",
+          description: "Welcome to InterviewAI!"
+        });
+
+        navigate('/dashboard'); // Navigate to dashboard
+      } else {
+        // Handle API errors (e.g., validation errors from server, user not found, file upload errors)
+        const errorMessage = result.error || result.message || "Failed to update profile. Please try again.";
+        throw new Error(errorMessage);
+      }
+
     } catch (error) {
+      console.error("Submission error:", error);
       toast({
         title: "Error",
-        description: "Something went wrong. Please try again.",
-        variant: "destructive",
+        description: `Something went wrong: ${error instanceof Error ? error.message : "An unknown error occurred."}`,
+        variant: "destructive"
       });
     } finally {
-      setIsLoading(false);
+      setIsLoading(false); // Reset loading state
     }
-  };
-
-  const handleInputChange = (field: string, value: any) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
   };
 
   return (
@@ -125,6 +166,7 @@ const BasicInfo = () => {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
+            {/* First Name & Last Name */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="firstName">First Name *</Label>
@@ -150,6 +192,7 @@ const BasicInfo = () => {
               </div>
             </div>
 
+            {/* Gender Radio Group */}
             <div className="space-y-2">
               <Label>Gender *</Label>
               <RadioGroup
@@ -172,6 +215,7 @@ const BasicInfo = () => {
               </RadioGroup>
             </div>
 
+            {/* Date of Birth Picker */}
             <div className="space-y-2">
               <Label>Date of Birth *</Label>
               <Popover>
@@ -192,13 +236,14 @@ const BasicInfo = () => {
                     selected={formData.dateOfBirth}
                     onSelect={(date) => handleInputChange('dateOfBirth', date)}
                     captionLayout="dropdown"
-                    fromYear={1970}
-                    toYear={new Date().getFullYear()}
+                    fromYear={1970} // Example start year
+                    toYear={new Date().getFullYear()} // Current year as end year
                   />
                 </PopoverContent>
               </Popover>
             </div>
 
+            {/* College Name */}
             <div className="space-y-2">
               <Label htmlFor="collegeName">College Name *</Label>
               <Input
@@ -211,10 +256,11 @@ const BasicInfo = () => {
               />
             </div>
 
+            {/* Years of Experience Select */}
             <div className="space-y-2">
               <Label>Years of Experience</Label>
               <Select
-                value={formData.yearsOfExperience.toString()}
+                value={formData.yearsOfExperience.toString()} // Convert number to string for Select component
                 onValueChange={(value) => handleInputChange('yearsOfExperience', parseInt(value))}
               >
                 <SelectTrigger className="transition-all duration-300 hover:scale-105">
@@ -231,34 +277,36 @@ const BasicInfo = () => {
               </Select>
             </div>
 
+            {/* Resume Upload Section */}
             <div className="space-y-2">
               <Label htmlFor="resume">Resume Upload</Label>
               <div className="relative">
                 <Input
                   id="resume"
                   type="file"
-                  accept=".pdf,.doc,.docx"
+                  accept=".pdf,.doc,.docx" // Specify accepted file types
                   onChange={handleFileChange}
-                  className="hidden"
+                  className="hidden" // Hide the default file input
                 />
                 <Label
-                  htmlFor="resume"
+                  htmlFor="resume" // Link label to hidden input
                   className="flex items-center justify-center w-full h-32 border-2 border-dashed border-border rounded-lg cursor-pointer hover:bg-secondary/50 transition-all duration-300 hover:scale-105"
                 >
                   <div className="text-center">
                     <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
                     <p className="text-sm text-muted-foreground">
-                      {formData.resumeFile ? formData.resumeFile.name : "Click to upload resume (PDF/DOC)"}
+                      {formData.resumeFile ? formData.resumeFile.name : "Click to upload resume (PDF/DOC/DOCX)"}
                     </p>
                   </div>
                 </Label>
               </div>
             </div>
 
-            <Button 
-              type="submit" 
-              className="w-full transition-all duration-300 hover:scale-105" 
-              disabled={isLoading}
+            {/* Submit Button */}
+            <Button
+              type="submit"
+              className="w-full transition-all duration-300 hover:scale-105"
+              disabled={isLoading} // Disable button during submission
             >
               {isLoading ? "Completing Profile..." : "Complete Profile"}
             </Button>

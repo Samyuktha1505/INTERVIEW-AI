@@ -71,15 +71,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signup = async (email: string, password: string, mobile: string): Promise<boolean> => {
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Make API call to backend server
+      const response = await fetch("http://localhost:3001/api/signup", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: email,
+          mobile: mobile,
+        }),
+      });
       
-      // Check if user already exists
-      const users = JSON.parse(localStorage.getItem('users') || '[]');
-      if (users.find((u: any) => u.email === email)) {
-        return false;
-      }
+      const data = await response.json();
       
+      if (data.success) {
+        // Create user object for local state
       const newUser: User = {
         id: Date.now().toString(),
         email,
@@ -88,6 +95,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
       
       // Store user with password for login
+        const users = JSON.parse(localStorage.getItem('users') || '[]');
       const userWithPassword = { ...newUser, password };
       users.push(userWithPassword);
       localStorage.setItem('users', JSON.stringify(users));
@@ -95,6 +103,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(newUser);
       localStorage.setItem('user', JSON.stringify(newUser));
       return true;
+      } else {
+        return false;
+      }
     } catch (error) {
       console.error('Signup error:', error);
       return false;

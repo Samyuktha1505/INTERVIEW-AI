@@ -89,18 +89,11 @@ const Signup = () => {
 
     try {
       const success = await signup(formData.email, formData.password, formData.mobile);
+      
       if (success) {
-        toast({
-          title: "Account created successfully",
-          description: "Please complete your profile",
-        });
-        navigate('/basic-info');
+        toast({ title: "Account created", description: "Please complete your profile" });
       } else {
-        toast({
-          title: "Signup failed",
-          description: "Email already exists or server error",
-          variant: "destructive",
-        });
+        toast({ title: "Signup failed", description: "Email already exists", variant: "destructive" });
       }
     } catch (error) {
       toast({
