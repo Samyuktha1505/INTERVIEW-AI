@@ -2,6 +2,9 @@ from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import google.generativeai as genai
+from google import genai
+from google.genai.types import Tool, GenerateContentConfig, GoogleSearch
+from dotenv import load_dotenv
 from pydantic_settings import BaseSettings
 import os
 import tempfile
@@ -9,13 +12,28 @@ import logging
 import datetime
 import json
 import mysql.connector
+from s3_client import s3_client  # Import your S3 client                                        
 
 # Import your custom functions and prompts
 from prompts import llm1_prompt
 from functions import extract_text_from_pdf, process_and_extract_json_data
 
+load_dotenv()
+
+# --- Logging Configuration ---
+logging.basicConfig(
+    filename="api_errors.log",
+    level=logging.ERROR,
+    format='%(asctime)s - %(levelname)s - %(message)s')
+
 # --- Settings Management (unchanged) ---
 class Settings(BaseSettings):
+    environment: str = os.getenv("ENVIRONMENT", "development")
+    #GEMINI_API_KEY: str
+    AWS_ACCESS_KEY_ID: str
+    AWS_SECRET_ACCESS_KEY: str
+    AWS_REGION: str
+    AWS_BUCKET_NAME: str
     google_api_key: str
     db_host: str
     db_user: str
@@ -26,14 +44,23 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-# --- Gemini/FastAPI Setup (unchanged) ---
-genai.configure(api_key=settings.google_api_key)
+# --- Gemini Client Initialization ---
+if not settings.google_api_key:
+    raise ValueError("GEMINI_API_KEY is not set in environment variables or .env file.")
+
+client = genai.Client(api_key=settings.google_api_key)
 model_id = "gemini-1.5-flash"
+google_search_tool = Tool(google_search=GoogleSearch())
+
+# --- FastAPI Application Setup ---
+app = FastAPI(title="Resume Analyzer API", version="1.0")
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-app = FastAPI(title="Interview AI API", version="1.0")
 app.add_middleware(
-    CORSMiddleware, allow_origins=["*"], allow_credentials=True,
-    allow_methods=["*"], allow_headers=["*"],
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # --- Database Connection Helper (unchanged) ---
@@ -51,7 +78,8 @@ def get_db_connection():
 # --- Endpoint 1: Analyze Resume and SAVE to DB ---
 @app.post("/v1/analyze_resume/")
 async def analyze_resume(
-    resume: UploadFile = File(...),
+    resume: UploadFile = File(None),
+    user_email: str = Form(...),
     session_id: str = Form(...),
     targetRole: str = Form(...),
     targetCompany: str = Form(...),
@@ -66,14 +94,49 @@ async def analyze_resume(
     db_conn = None
     tmp_file_path = None
     try:
+
+        print(f"[{datetime.datetime.now()}] Received request for user: {user_email}")
+        print(f"File received: {resume.filename}, Content-Type: {resume.content_type}")
+        if resume:
+            print(f"Processing direct upload: {resume.filename}")
+            if resume.content_type != "application/pdf":
+                raise HTTPException(status_code=400, detail="Only PDF files are allowed")
+            
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+            content = await resume.read()
+            if len(content) > 5 * 1024 * 1024:
+                raise HTTPException(status_code=413, detail="File size exceeds 5MB. Max 5MB allowed.")
             tmp_file.write(await resume.read())
             tmp_file_path = tmp_file.name
-            
-        resume_text = extract_text_from_pdf(tmp_file_path)
-        if not resume_text.strip():
-            raise HTTPException(status_code=400, detail="Could not extract text from PDF.")
+        print(f"[{datetime.datetime.now()}] PDF saved temporarily at: {tmp_file_path}")
+       
+        # Upload to S3
+        try:
+            with open(tmp_file_path, 'rb') as f:
+                upload_result = s3_client.upload_resume(
+                    user_id=user_email,
+                    file_bytes=f.read()
+                )
+            print(f"[{datetime.datetime.now()}] Resume uploaded to S3: {upload_result['url']}")
+        except Exception as upload_error:
+            logging.error(f"S3 upload failed: {str(upload_error)}")
+            raise HTTPException(status_code=500, detail="Failed to store resume in S3")
+        
+        # resume_text = extract_text_from_pdf(tmp_file_path)
+        # if not resume_text.strip():
+        #     raise HTTPException(status_code=400, detail="Could not extract text from PDF.")
 
+        # Get the most recent resume from S3 (which we just uploaded)
+        try:
+            resume_text = extract_text_from_pdf(s3_client.get_resume_from_s3(user_email))
+            if not resume_text.strip():
+                raise HTTPException(status_code=400, detail="Could not extract text from the PDF.")
+            print(f"[{datetime.datetime.now()}] Extracted {len(resume_text)} characters from resume")
+        except HTTPException as e:
+            if e.status_code == 404:
+                raise HTTPException(status_code=400, detail="No resume found. Please upload one.")
+            raise e
+        
         # --- THIS BLOCK WAS MISSING - IT IS NOW RESTORED ---
         prompt = llm1_prompt(
             resume_text=resume_text,
