@@ -8,7 +8,12 @@ import {
 import { Captions, CaptionsOff, Send } from "lucide-react";
 import React, { useEffect, useRef, useState } from "react";
 import { useLiveAPIContext } from "../../contexts/LiveAPIContext";
-import { ChatMessage, useChatStore } from "../../lib/store-chat"; // <-- IMPORT THE NEW STORE
+import { ChatMessage, useChatStore } from "../../lib/store-chat";
+
+// NEW: Define the props interface for the SidePanel component
+interface SidePanelProps {
+  initialPrompt: string;
+}
 
 // --- Helper component for a single chat bubble (no changes) ---
 const ChatBubble = ({ message }: { message: ChatMessage }) => {
@@ -32,26 +37,40 @@ const ChatBubble = ({ message }: { message: ChatMessage }) => {
   );
 };
 
-export default function SidePanel() {
+// NEW: Update the function to accept the 'initialPrompt' prop
+export default function SidePanel({ initialPrompt }: SidePanelProps) {
   const { client, connected } = useLiveAPIContext();
-  // --- Read messages directly from our new, clean chat store ---
   const chatMessages = useChatStore((state) => state.messages);
 
   const [showSubtitles, setShowSubtitles] = useState(true);
   const [textInput, setTextInput] = useState("");
   const transcriptEndRef = useRef<HTMLDivElement>(null);
 
+  // NEW: Add state to ensure we only send the initial prompt once
+  const [isPromptSent, setIsPromptSent] = useState(false);
+
+  // This existing useEffect for scrolling the view is unchanged
   useEffect(() => {
     if (showSubtitles) {
       transcriptEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   }, [chatMessages, showSubtitles]);
 
+  // NEW: Add a useEffect to send the initial prompt when the connection is ready
+  useEffect(() => {
+    // Check if we have a prompt, are connected, and haven't sent it yet
+    if (initialPrompt && connected && !isPromptSent) {
+      console.log("Sending initial prompt to AI Agent...");
+      // Send the prompt to the backend to configure the AI agent for the interview
+      client.send([{ text: initialPrompt }]);
+      // Mark the prompt as sent to prevent re-sending on re-renders
+      setIsPromptSent(true);
+    }
+  }, [initialPrompt, connected, isPromptSent, client]);
+
   const handleSubmit = () => {
     if (!textInput.trim() || !connected) return;
     
-    // When the user sends a text message, we add it to our store
-    // NOTE: If you also get user's spoken words transcribed, you'll need to call addMessage there too.
     useChatStore.getState().addMessage("user", textInput);
     client.send([{ text: textInput }]);
     setTextInput("");
@@ -64,6 +83,7 @@ export default function SidePanel() {
     }
   };
 
+  // The JSX and UI below are completely unchanged
   return (
     <div className="flex h-full flex-col bg-slate-50">
       {/* Header */}
@@ -101,7 +121,7 @@ export default function SidePanel() {
             ))}
             {chatMessages.length === 0 && (
               <p className="text-center text-sm text-slate-400">
-                Waiting for the conversation to start...
+                Connecting to interview agent...
               </p>
             )}
             <div ref={transcriptEndRef} />

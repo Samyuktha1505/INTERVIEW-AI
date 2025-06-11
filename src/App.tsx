@@ -1,3 +1,4 @@
+import React from 'react';
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -10,7 +11,6 @@ import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import BasicInfo from "./pages/BasicInfo";
 import Dashboard from "./pages/Dashboard";
-import InterviewRoom from "./pages/InterviewRoom";
 import NotFound from "./pages/NotFound";
 import ProtectedRoute from "./components/ProtectedRoute";
 import LiveInterviewSession from "./pages/LiveInterviewSession"; 
@@ -31,7 +31,6 @@ const App = () => (
               <Route path="/signup" element={<Signup />} />
               <Route path="/basic-info" element={<ProtectedRoute><BasicInfo /></ProtectedRoute>} />
               <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-              <Route path="/interview/:roomId" element={<ProtectedRoute><InterviewRoom /></ProtectedRoute>} />
               <Route path="/interview-session/:roomId" element={<ProtectedRoute><LiveInterviewSession /></ProtectedRoute>} />
 
               <Route path="*" element={<NotFound />} />

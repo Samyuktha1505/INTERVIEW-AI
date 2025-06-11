@@ -1,6 +1,5 @@
-// frontend/services/resumeAnalysis.ts
-
-// --- Interfaces for Request and Response ---
+// --- Interfaces for API Response Structure ---
+// These define the shape of the data we expect back from the backend.
 
 export interface ExtractedFields {
   name?: string;
@@ -24,7 +23,6 @@ export interface ExtractedFields {
   current_designation?: string;
   previous_companies?: string[];
   current_location?: string;
-  // Add other extracted fields you expect from your LLM prompt
 }
 
 export interface Question {
@@ -33,55 +31,28 @@ export interface Question {
   type: string;
 }
 
-// Updated ResumeAnalysisResponse to match backend output structure from main.py
+// This interface matches the final JSON object returned by your main.py endpoint.
 export interface ResumeAnalysisResponse {
-  extracted_fields: ExtractedFields;
-  questionnaire_prompt: Question[];
+  Extracted_fields: ExtractedFields;
+  Questionnaire_prompt: Question[];
 }
 
-export interface ResumeAnalysisRequest {
-  resume: File;
-  targetRole: string;
-  targetCompany: string;
-  yearsOfExperience: string; // Keep as string as per your form data flow
-  currentDesignation: string;
-  sessioninterval?: number; // Optional number type
-  interviewType: string;
-}
 
 // --- API Call Function ---
 
+/**
+ * Sends resume data to the backend for analysis.
+ * @param {FormData} formData - The FormData object, pre-built in the calling component.
+ * It must contain the resume file and all other required form fields.
+ * @returns {Promise<ResumeAnalysisResponse>} A promise that resolves to the analysis result from the backend.
+ */
 export const analyzeResume = async (
-  data: ResumeAnalysisRequest // This 'data' object is what's passed from InterviewRoom.tsx
+  formData: FormData // MODIFIED: The function now directly accepts a FormData object.
 ): Promise<ResumeAnalysisResponse> => {
 
   // --- DEBUGGING START ---
   console.log('--- analyzeResume Function Call Started ---');
-  console.log('Input data received by analyzeResume:', data);
-  console.log('  -> Resume File:', data.resume ? data.resume.name : 'No file object');
-  console.log('  -> Target Role:', data.targetRole);
-  console.log('  -> Target Company:', data.targetCompany);
-  console.log('  -> Years of Experience:', data.yearsOfExperience);
-  console.log('  -> Current Designation:', data.currentDesignation);
-  console.log('  -> Interview Type:', data.interviewType); // Crucial for your current issue
-  console.log('  -> Session Interval:', data.sessioninterval);
-
-  const formData = new FormData();
-  formData.append('resume', data.resume);
-  formData.append('targetRole', data.targetRole);
-  formData.append('targetCompany', data.targetCompany);
-  formData.append('yearsOfExperience', data.yearsOfExperience);
-  formData.append('currentDesignation', data.currentDesignation);
-  formData.append('interviewType', data.interviewType); // Appending interviewType
-
-  // CRUCIAL FIX: Changed 'Session_Interval' to 'sessioninterval'
-  // This matches the form field name expected by your FastAPI backend's `Form` parameter.
-  if (data.sessioninterval !== undefined && data.sessioninterval !== null) {
-    formData.append('sessioninterval', data.sessioninterval.toString());
-  }
-
-  // --- Inspect FormData Content Before Sending ---
-  console.log('--- FormData Content (before fetch) ---');
+  console.log('--- FormData Content Received (before fetch) ---');
   // Iterate over formData entries to see what will actually be sent
   for (let pair of formData.entries()) {
     // Note: For files, pair[1] will be the File object itself, not its content.
@@ -89,19 +60,18 @@ export const analyzeResume = async (
   }
   console.log('------------------------------------');
 
-
   try {
     const apiEndpoint = 'http://localhost:8000/v1/analyze_resume/';
     console.log(`Attempting to send POST request to: ${apiEndpoint}`);
 
     const response = await fetch(apiEndpoint, {
       method: 'POST',
-      body: formData, // FormData automatically sets Content-Type to multipart/form-data
+      body: formData, // Directly use the FormData object passed into the function.
+      // The browser automatically sets the 'Content-Type' header to 'multipart/form-data' with the correct boundary.
     });
 
     console.log('Received HTTP Response Status:', response.status);
     console.log('Received HTTP Response OK Status (2xx):', response.ok);
-
 
     if (!response.ok) {
       const errorBody = await response.text(); // Get raw text to handle various error formats

@@ -1,89 +1,82 @@
+import React, { createContext, useState, useContext, useEffect, ReactNode } from 'react';
+import { v4 as uuidv4 } from 'uuid';
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
-
-export interface InterviewRoom {
-  id: string;
+// Defines the structure of an Interview Room
+export interface Room {
+  id: string; // Will be a UUID string
+  userId?: string; // Optional: To associate with a logged-in user
   targetRole: string;
   targetCompany: string;
-  yearsOfExperience: number;
   interviewType: string;
+  yearsOfExperience: number;
+  currentDesignation: string;
+  sessionInterval?: number;
   resumeUrl?: string;
-  createdAt: string;
-  userId: string;
-  currentDesignation?: string;       
-  sessionInterval?: number;  
+  createdAt: string; // ISO string format for dates
 }
 
+// Defines the shape of our context's value
 interface InterviewContextType {
-  rooms: InterviewRoom[];
-  createRoom: (roomData: Omit<InterviewRoom, 'id' | 'createdAt' | 'userId'>) => string;
-  updateRoom: (roomId: string, roomData: Partial<InterviewRoom>) => void;
+  rooms: Room[];
+  createRoom: (roomData: Omit<Room, 'id' | 'createdAt'>) => string;
+  getRoom: (roomId: string) => Room | undefined;
   deleteRoom: (roomId: string) => void;
-  getRoom: (roomId: string) => InterviewRoom | undefined;
 }
 
 const InterviewContext = createContext<InterviewContextType | undefined>(undefined);
 
+// The provider component that wraps your app
+export const InterviewProvider = ({ children }: { children: ReactNode }) => {
+  // Lazy initialize state from localStorage on the first load
+  const [rooms, setRooms] = useState<Room[]>(() => {
+    try {
+      const savedRooms = localStorage.getItem('interviewRooms');
+      return savedRooms ? JSON.parse(savedRooms) : [];
+    } catch (error) {
+      console.error("Failed to parse rooms from localStorage", error);
+      return [];
+    }
+  });
+
+  // This effect automatically saves rooms to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem('interviewRooms', JSON.stringify(rooms));
+  }, [rooms]);
+
+  // Creates a new room with a unique UUID
+  const createRoom = (roomData: Omit<Room, 'id' | 'createdAt'>): string => {
+    const newId = uuidv4();
+    const newRoom: Room = {
+      ...roomData,
+      id: newId,
+      createdAt: new Date().toISOString(),
+    };
+    setRooms((prevRooms) => [...prevRooms, newRoom]);
+    return newId; // Return the new ID so it can be sent to the backend
+  };
+
+  const getRoom = (roomId: string): Room | undefined => {
+    return rooms.find(room => room.id === roomId);
+  };
+
+  const deleteRoom = (roomId: string): void => {
+    setRooms((prevRooms) => prevRooms.filter(room => room.id !== roomId));
+  };
+
+  const value = { rooms, createRoom, getRoom, deleteRoom };
+
+  return (
+    <InterviewContext.Provider value={value}>
+      {children}
+    </InterviewContext.Provider>
+  );
+};
+
+// A custom hook for easy access to the context
 export const useInterview = () => {
   const context = useContext(InterviewContext);
   if (context === undefined) {
     throw new Error('useInterview must be used within an InterviewProvider');
   }
   return context;
-};
-
-export const InterviewProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [rooms, setRooms] = useState<InterviewRoom[]>([]);
-
-  useEffect(() => {
-    const storedRooms = localStorage.getItem('interviewRooms');
-    if (storedRooms) {
-      setRooms(JSON.parse(storedRooms));
-    }
-  }, []);
-
-  const saveRooms = (newRooms: InterviewRoom[]) => {
-    setRooms(newRooms);
-    localStorage.setItem('interviewRooms', JSON.stringify(newRooms));
-  };
-
-  const createRoom = (roomData: Omit<InterviewRoom, 'id' | 'createdAt' | 'userId'>): string => {
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
-    const newRoom: InterviewRoom = {
-      ...roomData,
-      id: Date.now().toString(),
-      createdAt: new Date().toISOString(),
-      userId: user.id
-    };
-    
-    const newRooms = [...rooms, newRoom];
-    saveRooms(newRooms);
-    return newRoom.id;
-  };
-
-  const updateRoom = (roomId: string, roomData: Partial<InterviewRoom>) => {
-    const newRooms = rooms.map(room => 
-      room.id === roomId ? { ...room, ...roomData } : room
-    );
-    saveRooms(newRooms);
-  };
-
-  const deleteRoom = (roomId: string) => {
-    const newRooms = rooms.filter(room => room.id !== roomId);
-    saveRooms(newRooms);
-  };
-
-  const getRoom = (roomId: string) => {
-    return rooms.find(room => room.id === roomId);
-  };
-
-  const value = {
-    rooms,
-    createRoom,
-    updateRoom,
-    deleteRoom,
-    getRoom
-  };
-
-  return <InterviewContext.Provider value={value}>{children}</InterviewContext.Provider>;
 };
