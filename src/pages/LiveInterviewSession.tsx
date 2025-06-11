@@ -8,24 +8,17 @@ import cn from "classnames";
 import { LiveClientOptions } from "../types";
 import "../LiveInterviewSession.scss";
 import { Loader2 } from "lucide-react";
-import { ResumeAnalysisResponse } from "../services/resumeAnalysis"; // <-- IMPORTED TYPE
+import { ResumeAnalysisResponse } from "../services/resumeAnalysis";
+import { useChatStore } from "../lib/store-chat"; // <-- NEW: Import the chat store
 
-// This function now returns the raw response for status checking
 async function fetchAnalysis(sessionId: string) {
   const API_BASE_URL = 'http://localhost:8000';
   const response = await fetch(`${API_BASE_URL}/v1/analysis/${sessionId}`);
   return response;
 }
 
-const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
-
-if (typeof API_KEY !== "string") {
-  throw new Error("You must set VITE_GEMINI_API_KEY in your .env file");
-}
-
-const apiOptions: LiveClientOptions = {
-  apiKey: API_KEY,
-};
+const API_KEY = import.meta.env.VITE_GEMINI_API_KEY!;
+const apiOptions: LiveClientOptions = { apiKey: API_KEY };
 
 const LiveInterviewSession = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -36,18 +29,26 @@ const LiveInterviewSession = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // NEW: useEffect to clear chat history for the new session
+  useEffect(() => {
+    console.log("New interview session loaded. Clearing previous chat history.");
+    // Directly call the clearChat action from your Zustand store
+    useChatStore.getState().clearChat();
+  }, [roomId]); // This runs every time you navigate to a new room (i.e., when roomId changes)
+
+  // This useEffect for fetching the analysis is unchanged and correct
   useEffect(() => {
     if (!roomId) {
-      setError("No Room ID provided.");
+      setError("No Room ID provided in URL.");
       setIsLoading(false);
       return;
     }
 
     const getAnalysisWithRetries = async () => {
+      // The retry logic remains the same...
       const MAX_RETRIES = 5;
       const RETRY_DELAY_MS = 2000;
-
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         try {
           const response = await fetchAnalysis(roomId);
           if (response.ok) {
@@ -87,12 +88,12 @@ const LiveInterviewSession = () => {
     return <div className="flex items-center justify-center h-screen text-red-500">Error: {error}</div>;
   }
 
+  // The JSX for the layout is unchanged
   return (
     <div className="App">
       <LiveAPIProvider options={apiOptions}>
         <div className="streaming-console flex h-screen bg-gray-100">
           <aside className="w-72 lg:w-96 flex-shrink-0 h-full">
-            {/* You can pass the fetched initialPrompt to the component that starts the conversation */}
             <SidePanel initialPrompt={initialPrompt} />
           </aside>
           <main className="flex-grow h-full overflow-y-auto">

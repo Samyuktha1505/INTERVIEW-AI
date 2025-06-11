@@ -6,12 +6,14 @@ export type ChatMessage = {
   content: string;
 };
 
+// MODIFIED: Added clearChat to the store's type definition
 type ChatStore = {
   messages: ChatMessage[];
   addMessage: (author: "user" | "agent", content: string) => void;
+  clearChat: () => void; // <-- The new action
 };
 
-// This logic helps combine rapid-fire messages from the same author
+// This helper logic is unchanged
 const shouldCombine = (lastMessage: ChatMessage, author: "user" | "agent") => {
   if (!lastMessage || lastMessage.author !== author) return false;
   const now = Date.now();
@@ -22,6 +24,7 @@ const shouldCombine = (lastMessage: ChatMessage, author: "user" | "agent") => {
 
 export const useChatStore = create<ChatStore>((set) => ({
   messages: [],
+  
   addMessage: (author, content) => {
     set((state) => {
       const lastMessage = state.messages[state.messages.length - 1];
@@ -39,4 +42,8 @@ export const useChatStore = create<ChatStore>((set) => ({
       return { messages: [...state.messages, newMessage] };
     });
   },
+
+  // MODIFIED: Implemented the new clearChat action
+  // This action resets the messages array to an empty array.
+  clearChat: () => set({ messages: [] }),
 }));
