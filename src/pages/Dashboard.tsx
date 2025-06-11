@@ -48,21 +48,25 @@ const Dashboard = () => {
       <div className="p-6 border-b">
         <h2 className="text-xl font-bold text-primary">InterviewAI</h2>
       </div>
-      <nav className="flex-1 p-6 space-y-2">
-        <Button className="w-full justify-start" onClick={() => setIsSidebarOpen(false)}>
-          <User className="mr-2 h-4 w-4" />
-          Dashboard
-        </Button>
-        <Button className="w-full justify-start" onClick={() => setIsSidebarOpen(false)}>
-          <Video className="mr-2 h-4 w-4" />
-          Interviews
-        </Button>
-        <Link to="/profile"> {/* This is the key change */}
-    <Button className="w-full justify-start" onClick={() => setIsSidebarOpen(false)}>
-      <User className="mr-2 h-4 w-4" />
-      Profile
-    </Button>
-  </Link>
+      <nav className="flex-1 p-6"> {/* Removed space-y-2 from here */}
+        <div className="space-y-2"> {/* New div to apply space-y-2 to Dashboard and Interviews */}
+            <Button className="w-full justify-start" onClick={() => setIsSidebarOpen(false)}>
+              <User className="mr-2 h-4 w-4" />
+              Dashboard
+            </Button>
+            <Button className="w-full justify-start" onClick={() => setIsSidebarOpen(false)}>
+              <Video className="mr-2 h-4 w-4" />
+              Interviews
+            </Button>
+        </div>
+        <div className="mt-3"> {/* Add specific top margin to the Profile Link's container */}
+            <Link to="/profile">
+                <Button className="w-full justify-start" onClick={() => setIsSidebarOpen(false)}>
+                    <Settings className="mr-2 h-4 w-4" />
+                    Profile
+                </Button>
+            </Link>
+        </div>
       </nav>
       <div className="p-6 border-t">
         <div className="flex items-center space-x-3 mb-4">
