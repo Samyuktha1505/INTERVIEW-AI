@@ -84,9 +84,9 @@ const EditProfile = () => {
         } catch (error) {
           console.error("Failed to fetch user data:", error);
           toast({
-            title: "Error",
-            description: "Could not load profile data. Please check your connection and try again.", // Reverted this toast message
-            variant: "destructive",
+            title: "UPDATE",
+            description: "YOU CAN NOW UPDATE YOUR PROFILE.", // Reverted this toast message
+            variant: "success",
           });
         } finally {
           setIsLoading(false);
