@@ -4,7 +4,7 @@ import { useInterview } from "../contexts/InterviewContext";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { Plus, Calendar, User, Settings, LogOut, Video, Edit, Trash2, Menu } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import CreateRoomModal from "../components/CreateRoomModal";
@@ -57,10 +57,12 @@ const Dashboard = () => {
           <Video className="mr-2 h-4 w-4" />
           Interviews
         </Button>
-        <Button className="w-full justify-start" onClick={() => setIsSidebarOpen(false)}>
-          <Settings className="mr-2 h-4 w-4" />
-          Profile
-        </Button>
+        <Link to="/profile"> {/* This is the key change */}
+    <Button className="w-full justify-start" onClick={() => setIsSidebarOpen(false)}>
+      <User className="mr-2 h-4 w-4" />
+      Profile
+    </Button>
+  </Link>
       </nav>
       <div className="p-6 border-t">
         <div className="flex items-center space-x-3 mb-4">

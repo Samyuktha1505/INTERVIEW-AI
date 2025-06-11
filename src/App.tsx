@@ -11,6 +11,7 @@ import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import BasicInfo from "./pages/BasicInfo";
 import Dashboard from "./pages/Dashboard";
+import EditProfile from "./pages/EditProfile";
 import NotFound from "./pages/NotFound";
 import ProtectedRoute from "./components/ProtectedRoute";
 import LiveInterviewSession from "./pages/LiveInterviewSession"; 
@@ -31,6 +32,14 @@ const App = () => (
               <Route path="/signup" element={<Signup />} />
               <Route path="/basic-info" element={<ProtectedRoute><BasicInfo /></ProtectedRoute>} />
               <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+              <Route
+                path="/profile"
+                element={
+                  <ProtectedRoute>
+                    <EditProfile />
+                  </ProtectedRoute>
+                }
+              />
               <Route path="/interview-session/:roomId" element={<ProtectedRoute><LiveInterviewSession /></ProtectedRoute>} />
 
               <Route path="*" element={<NotFound />} />
