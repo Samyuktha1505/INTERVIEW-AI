@@ -1,13 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from "../contexts/AuthContext";
 import { useInterview } from "../contexts/InterviewContext";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useNavigate, Link } from "react-router-dom";
-import { Plus, Calendar, User, Settings, LogOut, Video, Edit, Trash2, Menu } from "lucide-react";
+import { Plus, User, Settings, LogOut, Video, Edit, Trash2, Menu, FileText, Loader2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import CreateRoomModal from "../components/CreateRoomModal";
+import { ReportModal } from '../components/ReportModal';
+import { generateAndFetchMetrics, Metrics } from '../services/metricsService';
+import { checkCompletedSessions } from '../services/interviewService';
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
 const Dashboard = () => {
@@ -16,8 +19,21 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isReportLoading, setIsReportLoading] = useState<string | null>(null);
+  const [selectedMetrics, setSelectedMetrics] = useState<Metrics | null>(null);
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const [completedRoomIds, setCompletedRoomIds] = useState<Set<string>>(new Set());
 
   const userRooms = rooms.filter(room => room.userId === user?.id);
+
+  useEffect(() => {
+    if (userRooms.length > 0) {
+      const roomIds = userRooms.map(room => room.id);
+      checkCompletedSessions(roomIds).then(completedIds => {
+        setCompletedRoomIds(completedIds);
+      });
+    }
+  }, [rooms, user?.id]); // Note: userRooms is derived, so we depend on the original state
 
   const handleLogout = () => {
     logout();
@@ -38,9 +54,25 @@ const Dashboard = () => {
     }
   };
   
-  // MODIFIED: This function now navigates directly to the live session
   const handleStartInterview = (roomId: string) => {
     navigate(`/interview-session/${roomId}`);
+  };
+
+  const handleGenerateReport = async (roomId: string) => {
+    setIsReportLoading(roomId);
+    try {
+      const metrics = await generateAndFetchMetrics(roomId);
+      setSelectedMetrics(metrics);
+      setIsReportModalOpen(true);
+    } catch (error: any) {
+      toast({
+        title: "Error Generating Report",
+        description: error.message || "Could not generate report.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsReportLoading(null);
+    }
   };
 
   const sidebarContent = (
@@ -48,24 +80,24 @@ const Dashboard = () => {
       <div className="p-6 border-b">
         <h2 className="text-xl font-bold text-primary">InterviewAI</h2>
       </div>
-      <nav className="flex-1 p-6"> {/* Removed space-y-2 from here */}
-        <div className="space-y-2"> {/* New div to apply space-y-2 to Dashboard and Interviews */}
-            <Button className="w-full justify-start" onClick={() => setIsSidebarOpen(false)}>
-              <User className="mr-2 h-4 w-4" />
-              Dashboard
-            </Button>
-            <Button className="w-full justify-start" onClick={() => setIsSidebarOpen(false)}>
-              <Video className="mr-2 h-4 w-4" />
-              Interviews
-            </Button>
+      <nav className="flex-1 p-6">
+        <div className="space-y-2">
+          <Button className="w-full justify-start" onClick={() => setIsSidebarOpen(false)}>
+            <User className="mr-2 h-4 w-4" />
+            Dashboard
+          </Button>
+          <Button className="w-full justify-start" onClick={() => setIsSidebarOpen(false)}>
+            <Video className="mr-2 h-4 w-4" />
+            Interviews
+          </Button>
         </div>
-        <div className="mt-3"> {/* Add specific top margin to the Profile Link's container */}
-            <Link to="/profile">
-                <Button className="w-full justify-start" onClick={() => setIsSidebarOpen(false)}>
-                    <Settings className="mr-2 h-4 w-4" />
-                    Profile
-                </Button>
-            </Link>
+        <div className="mt-3">
+          <Link to="/profile">
+            <Button className="w-full justify-start" onClick={() => setIsSidebarOpen(false)}>
+              <Settings className="mr-2 h-4 w-4" />
+              Profile
+            </Button>
+          </Link>
         </div>
       </nav>
       <div className="p-6 border-t">
@@ -187,7 +219,7 @@ const Dashboard = () => {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {userRooms.map((room) => (
-                  <Card key={room.id} className="transition-all duration-300 hover:scale-105 hover:shadow-lg">
+                  <Card key={room.id} className="flex flex-col justify-between transition-all duration-300 hover:scale-105 hover:shadow-lg">
                     <CardHeader>
                       <div className="flex items-start justify-between">
                         <div>
@@ -200,32 +232,35 @@ const Dashboard = () => {
                     <CardContent>
                       <div className="space-y-2 mb-4">
                         <p className="text-sm text-muted-foreground">
-                          <strong>Current Designation:</strong> {room.currentDesignation || "N/A"}
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          <strong>Experience:</strong> {room.yearsOfExperience} years
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          <strong>Session Interval:</strong> {room.sessionInterval || "Not set"}
-                        </p>
-                        <p className="text-sm text-muted-foreground">
                           <strong>Created:</strong> {new Date(room.createdAt).toLocaleDateString()}
                         </p>
                       </div>
-                      <div className="flex space-x-2">
-                        <Button 
-                          onClick={() => handleStartInterview(room.id)}
-                          className="flex-1"
-                        >
+                      <div className="grid grid-cols-2 gap-2">
+                        <Button onClick={() => handleStartInterview(room.id)} className="col-span-2">
                           <Video className="mr-2 h-4 w-4" />
                           Start Interview
                         </Button>
-                        <Button className="flex-1" variant="outline">
-                          <Edit className="h-4 w-4" />
+                        
+                        <Button
+                          variant="secondary"
+                          onClick={() => handleGenerateReport(room.id)}
+                          disabled={!completedRoomIds.has(room.id) || isReportLoading === room.id}
+                          className="col-span-2"
+                        >
+                          {isReportLoading === room.id ? (
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          ) : (
+                            <FileText className="mr-2 h-4 w-4" />
+                          )}
+                          Generate Report
+                        </Button>
+                        
+                        <Button variant="outline" size="icon">
+                           <Edit className="h-4 w-4" />
                         </Button>
                         <Button
-                          className="flex-1"
                           variant="destructive"
+                          size="icon"
                           onClick={() => handleDeleteRoom(room.id)}
                         >
                           <Trash2 className="h-4 w-4" />
@@ -243,6 +278,11 @@ const Dashboard = () => {
       <CreateRoomModal 
         open={isCreateModalOpen} 
         onOpenChange={setIsCreateModalOpen}
+      />
+      <ReportModal
+        isOpen={isReportModalOpen}
+        onClose={() => setIsReportModalOpen(false)}
+        metrics={selectedMetrics}
       />
     </div>
   );

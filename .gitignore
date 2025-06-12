@@ -4,6 +4,7 @@
 /node_modules
 /.pnp
 .pnp.js
+server/node_modules
 
 # Build output
 # Covers both Create React App (/build) and Vite (/dist)
@@ -42,14 +43,15 @@ lerna-debug.log*
 *.njsproj
 *.sln
 *.sw?
-# Ignore Python cache
+
+# --- Python Specific ---
+# Python cache
 __pycache__/
 *.pyc
 
-# Ignore Node modules
-node_modules/
-
-# Ignore environment files
-.env
+# Python Virtual Environments
+# Ignores any venv folder in the root, the one in llm3, and the s3venv one
+venv/
+llm3/venv/
 .s3venv/
-
+backend/venv/

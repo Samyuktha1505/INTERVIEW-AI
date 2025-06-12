@@ -1,10 +1,9 @@
 import React, { createContext, useState, useContext, useEffect, ReactNode } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 
-// Defines the structure of an Interview Room
 export interface Room {
-  id: string; // Will be a UUID string
-  userId?: string; // Optional: To associate with a logged-in user
+  id: string;
+  userId?: string;
   targetRole: string;
   targetCompany: string;
   interviewType: string;
@@ -12,22 +11,21 @@ export interface Room {
   currentDesignation: string;
   sessionInterval?: number;
   resumeUrl?: string;
-  createdAt: string; // ISO string format for dates
+  createdAt: string;
+  hasCompletedInterview?: boolean; // <-- NEW: Flag to track completion
 }
 
-// Defines the shape of our context's value
 interface InterviewContextType {
   rooms: Room[];
-  createRoom: (roomData: Omit<Room, 'id' | 'createdAt'>) => string;
+  createRoom: (roomData: Omit<Room, 'id' | 'createdAt' | 'hasCompletedInterview'>) => string;
   getRoom: (roomId: string) => Room | undefined;
   deleteRoom: (roomId: string) => void;
+  markRoomAsCompleted: (roomId: string) => void; // <-- NEW: Action to set the flag
 }
 
 const InterviewContext = createContext<InterviewContextType | undefined>(undefined);
 
-// The provider component that wraps your app
 export const InterviewProvider = ({ children }: { children: ReactNode }) => {
-  // Lazy initialize state from localStorage on the first load
   const [rooms, setRooms] = useState<Room[]>(() => {
     try {
       const savedRooms = localStorage.getItem('interviewRooms');
@@ -38,21 +36,20 @@ export const InterviewProvider = ({ children }: { children: ReactNode }) => {
     }
   });
 
-  // This effect automatically saves rooms to localStorage whenever they change
   useEffect(() => {
     localStorage.setItem('interviewRooms', JSON.stringify(rooms));
   }, [rooms]);
 
-  // Creates a new room with a unique UUID
-  const createRoom = (roomData: Omit<Room, 'id' | 'createdAt'>): string => {
+  const createRoom = (roomData: Omit<Room, 'id' | 'createdAt' | 'hasCompletedInterview'>): string => {
     const newId = uuidv4();
     const newRoom: Room = {
       ...roomData,
       id: newId,
       createdAt: new Date().toISOString(),
+      hasCompletedInterview: false, // Default to false on creation
     };
     setRooms((prevRooms) => [...prevRooms, newRoom]);
-    return newId; // Return the new ID so it can be sent to the backend
+    return newId;
   };
 
   const getRoom = (roomId: string): Room | undefined => {
@@ -63,7 +60,16 @@ export const InterviewProvider = ({ children }: { children: ReactNode }) => {
     setRooms((prevRooms) => prevRooms.filter(room => room.id !== roomId));
   };
 
-  const value = { rooms, createRoom, getRoom, deleteRoom };
+  // NEW: Implementation of the new action
+  const markRoomAsCompleted = (roomId: string) => {
+    setRooms(prevRooms =>
+      prevRooms.map(room =>
+        room.id === roomId ? { ...room, hasCompletedInterview: true } : room
+      )
+    );
+  };
+
+  const value = { rooms, createRoom, getRoom, deleteRoom, markRoomAsCompleted };
 
   return (
     <InterviewContext.Provider value={value}>
@@ -72,7 +78,6 @@ export const InterviewProvider = ({ children }: { children: ReactNode }) => {
   );
 };
 
-// A custom hook for easy access to the context
 export const useInterview = () => {
   const context = useContext(InterviewContext);
   if (context === undefined) {
