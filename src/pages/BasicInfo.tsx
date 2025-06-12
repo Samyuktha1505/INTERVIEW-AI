@@ -24,8 +24,8 @@ const BasicInfo = () => {
     dateOfBirth: undefined as Date | undefined, // Date object for DayPicker
     collegeName: '',
     yearsOfExperience: 0,
-    resumeFile: null as File | null, // To store the selected File object
-    countryCode: '+91' // Added countryCode with a default value (e.g., India)
+    resumeFile: null as File | null // To store the selected File object
+    // countryCode: '+91' // Added countryCode with a default value (e.g., India)
   });
 
   const [isLoading, setIsLoading] = useState(false); // Loading state for button
@@ -70,8 +70,8 @@ const BasicInfo = () => {
       !formData.lastName.trim() ||
       !formData.gender ||
       !formData.dateOfBirth ||
-      !formData.collegeName.trim() ||
-      !formData.countryCode // Added countryCode to validation
+      !formData.collegeName.trim() 
+      // !formData.countryCode // Added countryCode to validation
     ) {
       toast({
         title: "Validation Error",
@@ -118,7 +118,7 @@ const BasicInfo = () => {
       form.append("date_of_birth", formData.dateOfBirth ? format(formData.dateOfBirth, 'yyyy-MM-dd') : "");
       form.append("college_name", formData.collegeName);
       form.append("years_of_experience", formData.yearsOfExperience.toString()); // Convert number to string
-      form.append("country_code", formData.countryCode); // Append country code to FormData
+      // form.append("country_code", formData.countryCode); // Append country code to FormData
       if (formData.resumeFile) {
         form.append("resume", formData.resumeFile); // Append the actual File object
       }
@@ -200,7 +200,7 @@ const BasicInfo = () => {
             </div>
 
             {/* NEW: Country Code Select */}
-            <div className="space-y-2">
+            {/* <div className="space-y-2">
               <Label htmlFor="countryCode">Country Code *</Label>
               <Select
                 value={formData.countryCode}
@@ -217,14 +217,14 @@ const BasicInfo = () => {
                   <SelectItem value="+33">🇫🇷 +33 (France)</SelectItem>
                   <SelectItem value="+81">🇯🇵 +81 (Japan)</SelectItem>
                   {/* Add more country codes here as needed */}
-                  <SelectItem value="+86">🇨🇳 +86 (China)</SelectItem>
+                  {/* <SelectItem value="+86">🇨🇳 +86 (China)</SelectItem>
                   <SelectItem value="+61">🇦🇺 +61 (Australia)</SelectItem>
                   <SelectItem value="+52">🇲🇽 +52 (Mexico)</SelectItem>
                   <SelectItem value="+55">🇧🇷 +55 (Brazil)</SelectItem>
                   <SelectItem value="+7">🇷🇺 +7 (Russia)</SelectItem>
                 </SelectContent>
               </Select>
-            </div>
+            </div> */} 
 
             <div className="space-y-2">
               <Label>Gender *</Label>

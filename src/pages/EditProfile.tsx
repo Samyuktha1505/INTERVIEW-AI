@@ -9,7 +9,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { toast } from "@/hooks/use-toast";
-import { Upload, CalendarIcon } from "lucide-react";
+import { Upload, CalendarIcon, ArrowLeft } from "lucide-react"; // Import ArrowLeft icon
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { DayPicker } from 'react-day-picker';
@@ -70,7 +70,7 @@ const EditProfile = () => {
               collegeName: userData.college_name || '',
               yearsOfExperience: userData.years_of_experience || 0,
               resumeFile: null,
-              countryCode: userData.country_code || '+91', // Restore countryCode from fetched data
+              countryCode: userData.country_code || '+91',
               phoneNumber: userData.mobile || ''
             });
             setCurrentResumeUrl(userData.resume_url || null);
@@ -84,7 +84,7 @@ const EditProfile = () => {
         } catch (error) {
           console.error("Failed to fetch user data:", error);
           toast({
-            title: "UPDATE",
+            title: "UPDATE", // Reverted this toast message
             description: "YOU CAN NOW UPDATE YOUR PROFILE.", // Reverted this toast message
             variant: "success",
           });
@@ -132,7 +132,7 @@ const EditProfile = () => {
       !formData.gender ||
       !formData.dateOfBirth ||
       !formData.collegeName.trim() ||
-      !formData.countryCode || // Keep countryCode validation if it's in the form
+      !formData.countryCode ||
       !formData.phoneNumber.trim()
     ) {
       toast({
@@ -142,7 +142,6 @@ const EditProfile = () => {
       });
       return false;
     }
-    // Add this check:
     if (formData.dateOfBirth > new Date()) {
       toast({
         title: "Validation Error",
@@ -181,7 +180,7 @@ const EditProfile = () => {
       form.append("date_of_birth", formData.dateOfBirth ? format(formData.dateOfBirth, 'yyyy-MM-dd') : "");
       form.append("college_name", formData.collegeName);
       form.append("years_of_experience", formData.yearsOfExperience.toString());
-      form.append("country_code", formData.countryCode); // Keep countryCode in FormData
+      form.append("country_code", formData.countryCode);
       if (formData.resumeFile) {
         form.append("resume", formData.resumeFile);
       }
@@ -202,6 +201,7 @@ const EditProfile = () => {
           dateOfBirth: formData.dateOfBirth ? format(formData.dateOfBirth, 'yyyy-MM-dd') : "",
           collegeName: formData.collegeName,
           yearsOfExperience: formData.yearsOfExperience,
+          countryCode: formData.countryCode,
           mobile: formData.phoneNumber,
         });
 
@@ -232,7 +232,7 @@ const EditProfile = () => {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background to-secondary p-4">
         <Card className="w-full max-w-2xl text-center p-8">
-          <p className="text-lg">Loading profile data...</p>
+          <p className="text-lg">HANGON,UPDATING THE DETIALS</p>
         </Card>
       </div>
     );
@@ -242,7 +242,18 @@ const EditProfile = () => {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background to-secondary p-4">
       <Card className="w-full max-w-2xl">
         <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl font-bold text-center">Edit Your Profile</CardTitle>
+          <div className="flex items-center justify-between"> {/* Flex container for button and title */}
+            <Button
+              variant="ghost" // Use a ghost variant for a subtle back button
+              onClick={() => navigate('/dashboard')}
+              className="flex items-center gap-1 transition-all duration-300 hover:scale-105"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Back
+            </Button>
+            <CardTitle className="text-2xl font-bold text-center flex-grow">Edit Your Profile</CardTitle> {/* flex-grow to center title */}
+            <div></div> {/* Empty div to balance spacing if needed */}
+          </div>
           <CardDescription className="text-center">
             Update your personal and academic information
           </CardDescription>

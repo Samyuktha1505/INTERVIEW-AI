@@ -1,52 +1,68 @@
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { useNavigate, Link } from "react-router-dom";
-import { useAuth } from "../contexts/AuthContext";
-import { toast } from "@/hooks/use-toast";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Eye, EyeOff } from "lucide-react";
-import { GoogleLogin } from '@react-oauth/google';
+import { useNavigate, Link } from "react-router-dom";
+import { toast } from "@/hooks/use-toast";
+import { useAuth } from "../contexts/AuthContext";
 
 const Login = () => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const { login, user } = useAuth();
+  const { user, setUser } = useAuth();
   const navigate = useNavigate();
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (user) {
-      navigate('/dashboard');
+      navigate("/dashboard");
     }
   }, [user, navigate]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-
+  
     try {
-      const success = await login(email, password);
-      if (success) {
-        toast({
-          title: "Login successful",
-          description: "Welcome back!",
+      const res = await fetch("http://localhost:3001/api/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email, password }),
+      });
+  
+      const data = await res.json();
+  
+      if (res.ok && data.success) {
+        toast({ title: "Login successful", description: "Welcome back!" });
+        setUser({
+          id: data.user_id?.toString() || Date.now().toString(),
+          email,
+          isProfileComplete: false,
         });
-        navigate('/dashboard');
+        navigate("/dashboard");
       } else {
         toast({
           title: "Login failed",
-          description: "Invalid email or password",
+          description: data.message || "Invalid email or password",
           variant: "destructive",
         });
       }
-    } catch (error) {
+    } catch (err) {
+      console.error("Login error:", err);
       toast({
         title: "Error",
-        description: "Something went wrong. Please try again.",
+        description: "Something went wrong. Try again later.",
         variant: "destructive",
       });
     } finally {
@@ -56,7 +72,7 @@ const Login = () => {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background to-secondary p-4">
-      <Card className="w-full max-w-md">
+      <Card className="w-full max-w-md shadow-xl">
         <CardHeader className="space-y-1">
           <CardTitle className="text-2xl font-bold text-center">Welcome Back</CardTitle>
           <CardDescription className="text-center">
@@ -64,7 +80,7 @@ const Login = () => {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input
@@ -77,6 +93,7 @@ const Login = () => {
                 className="transition-all duration-300 focus:scale-105"
               />
             </div>
+
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
               <div className="relative">
@@ -96,33 +113,29 @@ const Login = () => {
                   className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
                   onClick={() => setShowPassword(!showPassword)}
                 >
-                  {showPassword ? (
-                    <EyeOff className="h-4 w-4" />
-                  ) : (
-                    <Eye className="h-4 w-4" />
-                  )}
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </Button>
               </div>
             </div>
-            <div className="flex items-center justify-between">
-              <Link 
-                to="/signup" 
-                className="text-sm text-primary hover:underline transition-colors"
-              >
+
+            <div className="flex items-center justify-between text-sm">
+              <Link to="/forgot-password" className="text-primary hover:underline">
                 Forgot password?
               </Link>
             </div>
-            <Button 
-              type="submit" 
-              className="w-full transition-all duration-300 hover:scale-105" 
+
+            <Button
+              type="submit"
+              className="w-full transition-all duration-300 hover:scale-105"
               disabled={isLoading}
             >
               {isLoading ? "Signing in..." : "Sign In"}
             </Button>
           </form>
+
           <div className="mt-6 text-center">
             <p className="text-sm text-muted-foreground">
-              Don't have an account?{" "}
+              Don&apos;t have an account?{" "}
               <Link to="/signup" className="text-primary hover:underline">
                 Sign up
               </Link>
