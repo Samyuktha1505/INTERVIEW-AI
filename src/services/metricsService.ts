@@ -1,20 +1,28 @@
 const API_BASE_URL = 'http://localhost:8001'; // NOTE: This uses port 8001
 
-// This interface should match the structure of the 'Metrics' object in your Python code
+// This interface should match the structure of the 'Metrics' object returned by the FastAPI backend
 export interface Metrics {
-  technical_score: number;
-  communication_score: number;
+  technical_rating: number;
+  communication_rating: number;
+  problem_solving_rating: number;
+  overall_rating: number;
+  remarks: string;
   suspicious_flag: boolean;
-  insights: string;
 }
 
 interface MetricsResponse {
   metrics: Metrics;
 }
 
+/**
+ * Triggers backend metric generation and returns the resulting metrics.
+ * 
+ * @param sessionId - Unique identifier for the interview session.
+ * @returns Metrics - The structured performance data.
+ * @throws Error if request fails or backend returns an error.
+ */
 export const generateAndFetchMetrics = async (sessionId: string): Promise<Metrics> => {
   try {
-    // We use a POST request as it triggers a creation/analysis process on the backend
     const response = await fetch(`${API_BASE_URL}/v1/metrics/${sessionId}`, {
       method: 'POST',
       headers: {

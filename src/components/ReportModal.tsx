@@ -17,17 +17,18 @@ interface ReportModalProps {
 }
 
 const ScoreBar = ({ score, label }: { score: number; label: string }) => {
-  const percentage = (score / 5) * 100;
+  const percentage = (score / 10) * 100;
   return (
     <div>
       <div className="flex justify-between items-center mb-1">
         <p className="text-sm font-medium text-gray-700">{label}</p>
-        <p className="text-sm font-bold text-slate-800">{score.toFixed(2)} / 5.00</p>
+        <p className="text-sm font-bold text-slate-800">{score.toFixed(2)} / 10.00</p>
       </div>
       <Progress value={percentage} className="h-2" />
     </div>
   );
 };
+
 
 export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, metrics }) => {
   if (!metrics) return null;
@@ -54,8 +55,11 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, metri
           <div className="p-4 border rounded-lg">
             <h3 className="text-lg font-semibold mb-4">Performance Scores</h3>
             <div className="space-y-4">
-              <ScoreBar score={metrics.technical_score} label="Technical Score" />
-              <ScoreBar score={metrics.communication_score} label="Communication Score" />
+              <ScoreBar score={metrics.technical_rating} label="Technical Rating" />
+              <ScoreBar score={metrics.communication_rating} label="Communication Rating" />
+              <ScoreBar score={metrics.problem_solving_rating} label="Problem Solving Rating" />
+              <ScoreBar score={metrics.overall_rating} label="Overall Rating" />
+
             </div>
           </div>
           
@@ -76,10 +80,12 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, metri
           </div>
 
           {/* AI Insights Section */}
-          <div className="p-4 border rounded-lg">
-            <h3 className="text-lg font-semibold mb-2">AI Insights</h3>
-            <p className="text-sm text-gray-600 whitespace-pre-wrap">{metrics.insights}</p>
-          </div>
+          {/* AI Insights Section */}
+        <div className="p-4 border rounded-lg">
+            <h3 className="text-lg font-semibold mb-2">AI Remarks</h3>
+            <p className="text-sm text-gray-600 whitespace-pre-wrap">{metrics.remarks}</p>
+        </div>
+
         </div>
       </DialogContent>
     </Dialog>

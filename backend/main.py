@@ -44,13 +44,13 @@ settings = Settings()
 
 # --- Gemini Client Initialization ---
 genai.configure(api_key=settings.google_api_key)
-model_id = "gemini-1.5-flash"
+model_id = "gemini-2.0-flash"
 
 # --- FastAPI Application Setup ---
 app = FastAPI(title="Interview AI API", version="1.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:8080"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -280,4 +280,4 @@ async def generate_and_save_metrics(session_id: str):
 # --- Uvicorn Server Runner ---
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="127.0.0.2", port=8000, reload=True)
