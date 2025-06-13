@@ -51,7 +51,8 @@ __pycache__/
 
 # Python Virtual Environments
 # Ignores any venv folder in the root, the one in llm3, and the s3venv one
+.venv/
 venv/
-llm3/venv/
+backend/.venv
 .s3venv/
 backend/venv/

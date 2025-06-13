@@ -30,7 +30,11 @@ export const useChatStore = create<ChatStore>((set) => ({
       const lastMessage = state.messages[state.messages.length - 1];
       // If the new message should be combined with the last one
       if (shouldCombine(lastMessage, author)) {
-        lastMessage.content += ` ${content}`;
+        // --- THIS IS THE FIX ---
+        // The extra space ` ` has been removed from `+= content`.
+        // This will correctly join the text chunks without adding spaces.
+        lastMessage.content += content;
+        // ----------------------
         return { messages: [...state.messages] };
       }
       // Otherwise, add a new message entry

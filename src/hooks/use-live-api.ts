@@ -1,18 +1,18 @@
 /**
- * Copyright 2024 Google LLC
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+ * Copyright 2024 Google LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GenAILiveClient } from "../lib/genai-live-client";
@@ -73,7 +73,6 @@ export function useLiveAPI(options: LiveClientOptions): UseLiveAPIResults {
 
     const onError = (error: ErrorEvent) => {
       console.error("[useLiveAPI] GenAI Client Error:", error);
-      // Optionally set connected to false here or handle specific errors
     };
 
     const stopAudioStreamer = () => audioStreamerRef.current?.stop();
@@ -107,22 +106,23 @@ export function useLiveAPI(options: LiveClientOptions): UseLiveAPIResults {
         console.error("[useLiveAPI] GenAI Live Client not initialized.");
         return;
     }
-    // Disconnect any existing session before attempting a new connection.
-    // This ensures that `client.connect` starts with a clean slate for its internal status.
     if (client.status !== "disconnected") {
         client.disconnect();
     }
     
-    // The GenAILiveClient.connect method now handles session resumption internally.
     await client.connect(model, config);
   }, [client, config, model]);
 
+  // MODIFIED: The disconnect function now also stops the audio streamer.
   const disconnect = useCallback(async () => {
     if (client) {
         client.disconnect();
     }
+    if (audioStreamerRef.current) {
+      audioStreamerRef.current.stop();
+    }
     setConnected(false); // Explicitly set connected to false
-  }, [client]);
+  }, [client, audioStreamerRef]);
 
   const setSessionTimeout = useCallback(
     (milliseconds: number) => {

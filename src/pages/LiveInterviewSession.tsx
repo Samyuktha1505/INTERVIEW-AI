@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Button } from "@/components/ui/button";
-import { LiveAPIProvider } from "../contexts/LiveAPIContext";
+import { LiveAPIProvider, useLiveAPIContext } from "../contexts/LiveAPIContext";
 import SidePanel from "../components/side-panel/SidePanel";
 import { Altair } from "../components/altair/Altair";
 import ControlTray from "../components/control-tray/ControlTray";
@@ -12,6 +11,9 @@ import { Loader2 } from "lucide-react";
 import { ResumeAnalysisResponse } from "../services/resumeAnalysis";
 import { useChatStore } from "../lib/store-chat";
 import { SessionTranscription } from "../lib/session-transcription";
+import { useWebcam } from "../hooks/use-webcam";
+import { useScreenCapture } from "../hooks/use-screen-capture";
+import { AudioRecorder } from "../lib/audio-recorder";
 
 async function fetchAnalysis(sessionId: string) {
   const API_BASE_URL = 'http://localhost:8000';
@@ -22,7 +24,7 @@ async function fetchAnalysis(sessionId: string) {
 const API_KEY = import.meta.env.VITE_GEMINI_API_KEY!;
 const apiOptions: LiveClientOptions = { apiKey: API_KEY };
 
-const LiveInterviewSession = () => {
+const LiveInterviewSessionContent = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [videoStream, setVideoStream] = useState<MediaStream | null>(null);
   const { roomId } = useParams<{ roomId: string }>();
@@ -30,29 +32,37 @@ const LiveInterviewSession = () => {
   const [initialPrompt, setInitialPrompt] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  // NEW: useRef to prevent calling endSession twice
   const sessionEndedRef = useRef(false);
 
+  const webcam = useWebcam();
+  const screenCapture = useScreenCapture();
+  const [audioRecorder] = useState(() => new AudioRecorder());
+  const { disconnect } = useLiveAPIContext();
+
+  // MODIFIED: The dependency array now correctly and safely includes all dependencies.
+  // This ensures the cleanup function has fresh references and runs reliably.
   useEffect(() => {
-    // Reset the flag and clear chat when the component mounts/roomId changes
     sessionEndedRef.current = false;
     useChatStore.getState().clearChat();
-    
+
     if (roomId) {
       SessionTranscription.initializeSession(roomId);
     }
 
-    // This cleanup function will now only run if the button wasn't clicked
     return () => {
+      console.log("Cleanup effect: Ensuring all media resources are released.");
+      webcam.stop();
+      screenCapture.stop();
+      audioRecorder.stop();
+      disconnect();
+
       if (!sessionEndedRef.current) {
-        console.log("Component unmounting unexpectedly. Saving transcription as a fallback.");
+        console.log("Component unmounted unexpectedly. Saving transcription as a fallback.");
         SessionTranscription.endSession();
       }
     };
-  }, [roomId]);
+  }, [roomId, disconnect, webcam, screenCapture, audioRecorder]);
 
-  // The useEffect for fetching analysis data is unchanged
   useEffect(() => {
     if (!roomId) {
       setError("No Room ID provided in URL.");
@@ -92,55 +102,74 @@ const LiveInterviewSession = () => {
     getAnalysisWithRetries();
   }, [roomId]);
 
-  const handleEndInterviewClick = async () => {
-    // Mark that the session has been ended intentionally
-    sessionEndedRef.current = true; 
-    console.log("End interview button clicked.");
+  const handleEndAndSave = async () => {
+    sessionEndedRef.current = true;
+    console.log("End & Save clicked. Stopping media, saving transcription, and navigating.");
+
+    webcam.stop();
+    screenCapture.stop();
+    audioRecorder.stop();
+    disconnect();
+
     await SessionTranscription.endSession();
     navigate('/dashboard');
   };
-  
+
+  const handleEndWithoutSaving = () => {
+    console.log("Navigating away without saving. Stopping media.");
+    
+    webcam.stop();
+    screenCapture.stop();
+    audioRecorder.stop();
+    disconnect();
+
+    navigate('/dashboard');
+  };
+
   if (isLoading) {
     return <div className="flex flex-col items-center justify-center h-screen"><Loader2 className="h-8 w-8 animate-spin mb-2" /><span>Loading interview setup...</span></div>;
   }
-  
+
   if (error) {
     return <div className="flex items-center justify-center h-screen text-red-500">Error: {error}</div>;
   }
 
   return (
+      <div className="streaming-console flex h-screen bg-gray-100">
+        <aside className="w-72 lg:w-96 flex-shrink-0 h-full">
+          <SidePanel initialPrompt={initialPrompt} />
+        </aside>
+        <main className="flex-grow h-full overflow-y-auto">
+          <div className="main-app-area">
+            <Altair />
+            <video
+              className={cn("stream", { hidden: !videoRef.current || !videoStream })}
+              ref={videoRef}
+              autoPlay
+              playsInline
+            />
+          </div>
+          <ControlTray
+            videoRef={videoRef}
+            supportsVideo={true}
+            onVideoStreamChange={setVideoStream}
+            enableEditingSettings={true}
+            onEndAndSave={handleEndAndSave}
+            onEndWithoutSaving={handleEndWithoutSaving}
+            audioRecorder={audioRecorder}
+            webcam={webcam}
+            screenCapture={screenCapture}
+          />
+        </main>
+      </div>
+  );
+};
+
+const LiveInterviewSession = () => {
+  return (
     <div className="App">
       <LiveAPIProvider options={apiOptions}>
-        <div className="streaming-console flex h-screen bg-gray-100">
-          <aside className="w-72 lg:w-96 flex-shrink-0 h-full">
-            <SidePanel initialPrompt={initialPrompt} />
-          </aside>
-          <main className="flex-grow h-full overflow-y-auto">
-            <div className="main-app-area">
-              <Altair />
-              <video
-                className={cn("stream", { hidden: !videoRef.current || !videoStream })}
-                ref={videoRef}
-                autoPlay
-                playsInline
-              />
-            </div>
-            <ControlTray
-              videoRef={videoRef}
-              supportsVideo={true}
-              onVideoStreamChange={setVideoStream}
-              enableEditingSettings={true}
-            />
-            <div className="absolute bottom-24 right-6 z-50">
-              <Button 
-                variant="destructive" 
-                onClick={handleEndInterviewClick}
-              >
-                End Interview & Save
-              </Button>
-            </div>
-          </main>
-        </div>
+        <LiveInterviewSessionContent />
       </LiveAPIProvider>
     </div>
   );

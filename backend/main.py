@@ -11,6 +11,7 @@ import tempfile
 import logging
 import datetime
 import json
+import traceback # Added for more detailed error logging
 import mysql.connector
 # from s3_client import s3_client # Your existing S3 client
 
@@ -23,7 +24,7 @@ load_dotenv()
 # --- Logging Configuration ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# --- Settings Management (Using your complete version) ---
+# --- Settings Management ---
 class Settings(BaseSettings):
     google_api_key: str
     db_host: str
@@ -82,7 +83,6 @@ class SessionIdList(BaseModel):
 # --- API ENDPOINTS ---
 # ====================================================================
 
-# --- Endpoint 1: Analyze Resume (Using your detailed logic) ---
 @app.post("/v1/analyze_resume/")
 async def analyze_resume(
     resume: UploadFile = File(...),
@@ -100,6 +100,7 @@ async def analyze_resume(
     
     db_conn = None
     tmp_file_path = None
+    cursor = None
     try:
         print(f"[{datetime.datetime.now()}] Received request for user: {user_email}")
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
@@ -108,8 +109,6 @@ async def analyze_resume(
                 raise HTTPException(status_code=413, detail="File size exceeds 5MB.")
             tmp_file.write(content)
             tmp_file_path = tmp_file.name
-        
-        # Your S3 logic can be re-enabled here if needed
         
         resume_text = extract_text_from_pdf(tmp_file_path)
         if not resume_text.strip():
@@ -156,15 +155,17 @@ async def analyze_resume(
             db_conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        if 'db_conn' in locals() and db_conn and db_conn.is_connected():
+        if cursor:
+            cursor.close()
+        if db_conn and db_conn.is_connected():
             db_conn.close()
         if tmp_file_path and os.path.exists(tmp_file_path):
             os.remove(tmp_file_path)
 
-# --- Endpoint 2: Get Analysis ---
 @app.get("/v1/analysis/{session_id}")
 async def get_analysis(session_id: str):
     db_conn = None
+    cursor = None
     try:
         db_conn = get_db_connection()
         cursor = db_conn.cursor(dictionary=True)
@@ -175,13 +176,15 @@ async def get_analysis(session_id: str):
         else:
             raise HTTPException(status_code=404, detail="Analysis not found.")
     finally:
+        if cursor:
+            cursor.close()
         if db_conn and db_conn.is_connected():
             db_conn.close()
 
-# --- Endpoint 3: Save Transcription ---
 @app.post("/v1/transcripts/")
 async def save_transcript(payload: TranscriptionPayload):
     db_conn = None
+    cursor = None
     try:
         db_conn = get_db_connection()
         cursor = db_conn.cursor()
@@ -201,20 +204,22 @@ async def save_transcript(payload: TranscriptionPayload):
             db_conn.rollback()
         raise HTTPException(status_code=500, detail="Database error during transcription save.")
     finally:
+        if cursor:
+            cursor.close()
         if db_conn and db_conn.is_connected():
             db_conn.close()
 
-# --- Endpoint 4: Check for Completed Transcriptions ---
 @app.post("/v1/sessions/check-completion")
 async def check_session_completion(payload: SessionIdList):
     if not payload.session_ids:
         return {"completed_ids": []}
     db_conn = None
+    cursor = None
     try:
         db_conn = get_db_connection()
         cursor = db_conn.cursor()
         format_strings = ','.join(['%s'] * len(payload.session_ids))
-        sql_query = f"SELECT DISTINCT session_id FROM Meeting WHERE session_id IN ({format_strings})"
+        sql_query = f"SELECT DISTINCT session_id FROM Metrics WHERE session_id IN ({format_strings})"
         cursor.execute(sql_query, tuple(payload.session_ids))
         results = cursor.fetchall()
         completed_ids = [row[0] for row in results]
@@ -223,14 +228,18 @@ async def check_session_completion(payload: SessionIdList):
         logging.error(f"Error checking session completion: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to check session completion status.")
     finally:
+        if cursor:
+            cursor.close()
         if db_conn and db_conn.is_connected():
             db_conn.close()
 
-# --- Endpoint 5: Generate and Save Metrics ---
 @app.post("/v1/metrics/{session_id}")
 async def generate_and_save_metrics(session_id: str):
     db_conn = None
+    cursor = None
+    write_cursor = None
     try:
+        logging.info(f"Fetching transcription for session_id: {session_id}")
         db_conn = get_db_connection()
         cursor = db_conn.cursor(dictionary=True)
         cursor.execute("SELECT transcription FROM Meeting WHERE session_id = %s", (session_id,))
@@ -240,6 +249,7 @@ async def generate_and_save_metrics(session_id: str):
             raise HTTPException(status_code=404, detail="Transcription not found for this session.")
         
         transcript_text = result['transcription']
+        logging.info(f"Transcription fetched, length: {len(transcript_text)}")
         
         prompt = generate_metrics_prompt(transcript_text)
         model = genai.GenerativeModel(model_id)
@@ -249,35 +259,55 @@ async def generate_and_save_metrics(session_id: str):
         if not metrics:
             raise HTTPException(status_code=500, detail="Failed to extract metrics from LLM response.")
 
+        logging.info(f"Metrics generated: {metrics}")
+
         sql_query = """
-            INSERT INTO Metrics (session_id, technical_score, communication_score, suspicious_flag, insights)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO Metrics (
+                session_id, technical_rating, communication_rating,
+                problem_solving_rating, overall_rating, remarks, suspicious_flag
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
             ON DUPLICATE KEY UPDATE
-                technical_score = VALUES(technical_score),
-                communication_score = VALUES(communication_score),
-                suspicious_flag = VALUES(suspicious_flag),
-                insights = VALUES(insights);
+                technical_rating = VALUES(technical_rating),
+                communication_rating = VALUES(communication_rating),
+                problem_solving_rating = VALUES(problem_solving_rating),
+                overall_rating = VALUES(overall_rating),
+                remarks = VALUES(remarks),
+                suspicious_flag = VALUES(suspicious_flag);
         """
-        # Create a new cursor for the write operation
+        
         write_cursor = db_conn.cursor()
         write_cursor.execute(sql_query, (
-            session_id, metrics.get('technical_score'), metrics.get('communication_score'),
-            metrics.get('suspicious_flag'), metrics.get('insights')
+            session_id,
+            metrics.get('technical_rating'),
+            metrics.get('communication_rating'),
+            metrics.get('problem_solving_rating'),
+            metrics.get('overall_rating'),
+            metrics.get('remarks'),
+            metrics.get('suspicious_flag', False)
         ))
         db_conn.commit()
-        write_cursor.close()
 
+        logging.info(f"Successfully saved metrics for session_id: {session_id}")
         return JSONResponse(content={"metrics": metrics})
+    except HTTPException as http_exc:
+        raise http_exc
     except Exception as e:
-        logging.error(f"Error generating metrics for session {session_id}: {e}", exc_info=True)
+        logging.error(f"Error generating metrics for session {session_id}: {e}\n{traceback.format_exc()}")
         if db_conn:
             db_conn.rollback()
         raise HTTPException(status_code=500, detail="An internal error occurred while generating metrics.")
     finally:
+        # MODIFIED: Simplified and corrected the cleanup logic.
+        if cursor:
+            cursor.close()
+        if write_cursor:
+            write_cursor.close()
         if db_conn and db_conn.is_connected():
             db_conn.close()
+
 
 # --- Uvicorn Server Runner ---
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="127.0.0.2", port=8000, reload=True)
+    # MODIFIED: Changed host to standard 127.0.0.1 for best practice.
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)

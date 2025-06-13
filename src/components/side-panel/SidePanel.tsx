@@ -89,7 +89,7 @@ export default function SidePanel({ initialPrompt }: SidePanelProps) {
       {/* Header */}
       <div className="flex flex-shrink-0 items-center justify-between border-b border-slate-200 p-3">
         <h3 className="text-lg font-semibold text-slate-800">
-          Agent Transcript
+          Interview Room
         </h3>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -107,7 +107,7 @@ export default function SidePanel({ initialPrompt }: SidePanelProps) {
             </Button>
           </TooltipTrigger>
           <TooltipContent>
-            <p>{showSubtitles ? "Hide Transcript" : "Show Transcript"}</p>
+            <p>{showSubtitles ? "Hide Subtitles" : "Show Subtitles"}</p>
           </TooltipContent>
         </Tooltip>
       </div>
@@ -128,7 +128,7 @@ export default function SidePanel({ initialPrompt }: SidePanelProps) {
           </div>
         ) : (
           <div className="flex h-full items-center justify-center text-slate-400">
-            <p>Transcript is hidden.</p>
+            <p>Subtitles are hidden.</p>
           </div>
         )}
       </div>

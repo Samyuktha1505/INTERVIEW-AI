@@ -1,7 +1,6 @@
-import { memo, ReactNode, RefObject, useEffect, useRef, useState } from "react";
+import { memo, ReactNode, RefObject, useEffect, useState, useRef } from "react";
 import cn from "classnames";
 
-// Using correct icons from lucide-react.
 import {
   Mic,
   MicOff,
@@ -14,7 +13,6 @@ import {
   Settings,
 } from "lucide-react";
 
-// Using your project's standard UI components
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import {
@@ -25,17 +23,21 @@ import {
 
 import { useLiveAPIContext } from "../../contexts/LiveAPIContext";
 import { UseMediaStreamResult } from "../../hooks/use-media-stream-mux";
-import { useScreenCapture } from "../../hooks/use-screen-capture";
-import { useWebcam } from "../../hooks/use-webcam";
 import { AudioRecorder } from "../../lib/audio-recorder";
 import SettingsDialog from "../settings-dialog/SettingsDialog";
 
+// MODIFIED: Props are updated to receive state and handlers from the parent.
 export type ControlTrayProps = {
   videoRef: RefObject<HTMLVideoElement>;
   children?: ReactNode;
   supportsVideo: boolean;
   onVideoStreamChange?: (stream: MediaStream | null) => void;
   enableEditingSettings?: boolean;
+  onEndAndSave: () => Promise<void>;
+  onEndWithoutSaving: () => void;
+  audioRecorder: AudioRecorder;
+  webcam: UseMediaStreamResult;
+  screenCapture: UseMediaStreamResult;
 };
 
 function ControlTray({
@@ -43,15 +45,21 @@ function ControlTray({
   onVideoStreamChange = () => {},
   supportsVideo,
   enableEditingSettings,
+  onEndAndSave,
+  onEndWithoutSaving,
+  audioRecorder,
+  webcam,
+  screenCapture,
 }: ControlTrayProps) {
-  const videoStreams = [useWebcam(), useScreenCapture()];
-  const [activeVideoStream, setActiveVideoStream] =
-    useState<MediaStream | null>(null);
-  const [webcam, screenCapture] = videoStreams;
+  // MODIFIED: This component no longer creates its own media hooks. It receives them as props.
+  const videoStreams = [webcam, screenCapture];
+  const [activeVideoStream, setActiveVideoStream] = useState<MediaStream | null>(null);
   const [muted, setMuted] = useState(false);
   const renderCanvasRef = useRef<HTMLCanvasElement>(null);
-  const [audioRecorder] = useState(() => new AudioRecorder());
-  const { client, connected, connect, disconnect } = useLiveAPIContext();
+
+  // MODIFIED: The disconnect function is no longer called directly from here.
+  const { client, connected, connect } = useLiveAPIContext();
+
   useEffect(() => {
     const onData = (base64: string) => {
       client.sendRealtimeInput([
@@ -73,22 +81,16 @@ function ControlTray({
       videoRef.current.srcObject = activeVideoStream;
     }
   }, [activeVideoStream, videoRef]);
-  /**
-   * MODIFIED: This function now correctly toggles a stream on and off.
-   */
 
   const toggleStream = (streamSource: UseMediaStreamResult) => async () => {
-    // If the clicked stream is already running, turn it off.
     if (streamSource.isStreaming) {
       streamSource.stop();
       setActiveVideoStream(null);
       onVideoStreamChange(null);
     } else {
-      // If the clicked stream is not running, turn it on.
-      // First, stop any *other* video stream that might be active.
       videoStreams
         .filter((s) => s !== streamSource && s.isStreaming)
-        .forEach((s) => s.stop()); // Start the new stream
+        .forEach((s) => s.stop());
 
       const mediaStream = await streamSource.start();
       setActiveVideoStream(mediaStream);
@@ -97,7 +99,6 @@ function ControlTray({
   };
 
   return (
-    // Main container to center the controls at the bottom of the screen
     <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-50">
       <canvas style={{ display: "none" }} ref={renderCanvasRef} />
       <div className="flex items-center gap-2 p-2 bg-slate-900/80 backdrop-blur-sm border border-slate-700 rounded-full shadow-2xl">
@@ -161,11 +162,12 @@ function ControlTray({
             <p>{screenCapture.isStreaming ? "Stop Sharing" : "Share Screen"}</p>
           </TooltipContent>
         </Tooltip>
-      <div className="h-8 w-px bg-slate-700 mx-2"></div>
+        <div className="h-8 w-px bg-slate-700 mx-2"></div>
         <Tooltip>
           <TooltipTrigger asChild>
+            {/* MODIFIED: This button now saves the session when ending it. */}
             <Button
-              onClick={connected ? disconnect : connect}
+              onClick={connected ? onEndAndSave : connect}
               className={cn(
                 "h-12 w-12 rounded-full text-white",
                 connected
@@ -181,7 +183,8 @@ function ControlTray({
             </Button>
           </TooltipTrigger>
           <TooltipContent>
-            <p>{connected ? "End Session" : "Start Session"}</p>
+            {/* MODIFIED: Tooltip text updated to reflect new functionality. */}
+            <p>{connected ? "End Interview & Save" : "Start Interview"}</p>
           </TooltipContent>
         </Tooltip>
         {enableEditingSettings && (
@@ -203,7 +206,8 @@ function ControlTray({
               </TooltipContent>
             </Tooltip>
             <DialogContent>
-              <SettingsDialog />
+              {/* MODIFIED: Pass the handler to the settings dialog. */}
+              <SettingsDialog onEndWithoutSaving={onEndWithoutSaving}/>
             </DialogContent>
           </Dialog>
         )}

@@ -3,13 +3,14 @@ import json
 import re
 import logging
 
-# Configure a logger for this module
+# Configure a logger for this module (kept from original backend)
 func_logger = logging.getLogger(__name__)
 func_logger.setLevel(logging.INFO)
 
 def extract_text_from_pdf(pdf_path):
     """
     Extracts all text from a PDF using PyMuPDF.
+    (Using the version from backend with more detailed logging)
     """
     func_logger.info(f"Attempting to extract text from PDF: {pdf_path}")
     doc = fitz.open(pdf_path)
@@ -21,20 +22,25 @@ def extract_text_from_pdf(pdf_path):
     func_logger.info(f"Finished extracting text. Total length: {len(text)}")
     return text
 
-def clean_json_string(raw_string):
+def clean_json_string(raw_string: str) -> str:
     """
-    Cleans LLM response by removing ```json or ``` code block formatting.
+    Cleans a raw string by removing code block markers and control characters.
+    (Using the more robust version from llm3)
     """
     func_logger.info("Cleaning raw JSON string from LLM response.")
-    # This improved regex handles optional 'json' text and various whitespaces
-    return re.sub(r'```(?:json)?\s*([\s\S]*?)\s*```', r'\1', raw_string).strip()
+    # Remove ```json ... ``` or ``` ... ``` blocks
+    cleaned = re.sub(r'```(?:json)?\s*([\s\S]*?)\s*```', r'\1', raw_string)
+    # Remove control characters like \x00-\x1F that can break JSON parsing
+    cleaned = re.sub(r'[\x00-\x1F\x7F]', '', cleaned)
+    return cleaned.strip()
 
 def process_and_extract_json_data(raw_string):
     """
     Cleans and parses JSON data from the resume analysis LLM response.
     Returns a tuple of (Extracted_fields, Questionnaire_prompt) as JSON-formatted strings.
+    (This function is unique to the original backend and is preserved)
     """
-    func_logger.info("Starting JSON data extraction and parsing.")
+    func_logger.info("Starting JSON data extraction and parsing for resume analysis.")
     cleaned_string = clean_json_string(raw_string)
     func_logger.info(f"Cleaned JSON string length: {len(cleaned_string)}")
 
@@ -54,19 +60,35 @@ def process_and_extract_json_data(raw_string):
         func_logger.error(f"Failed JSON string (first 500 chars):\n{cleaned_string[:500]}...")
         raise ValueError(f"Invalid JSON format received from LLM: {e}")
 
-# --- THIS IS THE NEW FUNCTION THAT WAS MISSING ---
 def extract_metrics_from_json(raw_string: str) -> dict:
     """
-    Processes a raw LLM response string to extract the 'Metrics' JSON object.
+    Extracts and parses a JSON object containing interview metrics from LLM response.
+    Tries to parse entire JSON, or a nested 'Metrics' object if available.
+    (Using the more robust version from llm3)
     """
     func_logger.info("Extracting metrics from LLM response.")
     cleaned_string = clean_json_string(raw_string)
+
     try:
-        data = json.loads(cleaned_string)
-        # Specifically return the dictionary inside the "Metrics" key
-        metrics_data = data.get("Metrics", {})
-        func_logger.info(f"Successfully extracted metrics: {metrics_data}")
-        return metrics_data
+        # Use regex to extract JSON object if the string contains extra text
+        match = re.search(r'\{.*\}', cleaned_string, re.DOTALL)
+        if not match:
+            raise ValueError("No valid JSON object found in the LLM response.")
+
+        json_string = match.group(0)
+        data = json.loads(json_string)
+
+        # Return the 'Metrics' dictionary if it's nested, otherwise return the whole object
+        if isinstance(data, dict) and "Metrics" in data:
+            metrics_data = data["Metrics"]
+            func_logger.info(f"Successfully extracted nested metrics: {metrics_data}")
+            return metrics_data
+        
+        func_logger.info(f"Successfully extracted metrics (non-nested): {data}")
+        return data
     except json.JSONDecodeError as e:
         func_logger.error(f"Failed to decode JSON for metrics: {e}", exc_info=True)
         raise ValueError(f"Invalid JSON format in metrics response: {e}")
+    except Exception as e:
+        func_logger.error(f"An unexpected error occurred during JSON parsing for metrics: {e}")
+        raise
