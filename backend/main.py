@@ -219,7 +219,14 @@ async def check_session_completion(payload: SessionIdList):
         db_conn = get_db_connection()
         cursor = db_conn.cursor()
         format_strings = ','.join(['%s'] * len(payload.session_ids))
-        sql_query = f"SELECT DISTINCT session_id FROM Metrics WHERE session_id IN ({format_strings})"
+        
+        # *** THE ONLY CHANGE IS HERE: THIS IS THE CORRECT LOGIC ***
+        # This query now correctly checks if a transcript has been saved in the Meeting table.
+        sql_query = f"""
+            SELECT DISTINCT session_id FROM Meeting 
+            WHERE session_id IN ({format_strings}) AND transcription_flag = 1
+        """
+        
         cursor.execute(sql_query, tuple(payload.session_ids))
         results = cursor.fetchall()
         completed_ids = [row[0] for row in results]
@@ -297,7 +304,6 @@ async def generate_and_save_metrics(session_id: str):
             db_conn.rollback()
         raise HTTPException(status_code=500, detail="An internal error occurred while generating metrics.")
     finally:
-        # MODIFIED: Simplified and corrected the cleanup logic.
         if cursor:
             cursor.close()
         if write_cursor:
@@ -305,9 +311,7 @@ async def generate_and_save_metrics(session_id: str):
         if db_conn and db_conn.is_connected():
             db_conn.close()
 
-
 # --- Uvicorn Server Runner ---
 if __name__ == "__main__":
     import uvicorn
-    # MODIFIED: Changed host to standard 127.0.0.1 for best practice.
     uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
