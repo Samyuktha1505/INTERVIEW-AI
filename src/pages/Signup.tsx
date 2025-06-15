@@ -7,8 +7,6 @@ import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { toast } from "@/hooks/use-toast";
 import { Eye, EyeOff } from "lucide-react";
-import { GoogleLogin } from '@react-oauth/google';
-import { jwtDecode } from "jwt-decode";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const Signup = () => {
@@ -24,10 +22,6 @@ const Signup = () => {
   const [isLoading, setIsLoading] = useState(false);
   const { signup, user } = useAuth();
   const navigate = useNavigate();
-
-  // Google login mobile prompt
-  const [askPhone, setAskPhone] = useState(false);
-  const [googleEmail, setGoogleEmail] = useState('');
 
   useEffect(() => {
     if (user) {
@@ -90,27 +84,12 @@ const Signup = () => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleGoogleSuccess = async (credentialResponse: any) => {
-    if (!credentialResponse.credential) return;
-    const decoded: any = jwtDecode(credentialResponse.credential);
-    setGoogleEmail(decoded.email);
-    setAskPhone(true);
-  };
-
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background to-secondary p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-4">
           <CardTitle className="text-2xl font-bold text-center">Create Account</CardTitle>
           <CardDescription className="text-center">Join InterviewAI and start practicing</CardDescription>
-          <div className="flex justify-center">
-            <GoogleLogin
-              onSuccess={handleGoogleSuccess}
-              onError={() =>
-                toast({ title: "Google Signup Failed", variant: "destructive" })
-              }
-            />
-          </div>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -221,76 +200,6 @@ const Signup = () => {
           </div>
         </CardContent>
       </Card>
-
-      {/* Prompt for phone number after Google login */}
-      {askPhone && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-sm space-y-4 shadow-xl">
-            <h2 className="text-lg font-semibold text-center">Enter Mobile Number</h2>
-            <Label>Country Code</Label>
-            <Select
-              value={formData.countryCode}
-              onValueChange={(value) => handleInputChange('countryCode', value)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Code" />
-              </SelectTrigger>
-              <SelectContent>
-              <SelectItem value="+1">🇺🇸 +1 (USA/Canada)</SelectItem>
-                  <SelectItem value="+44">🇬🇧 +44 (UK)</SelectItem>
-                  <SelectItem value="+91">🇮🇳 +91 (India)</SelectItem>
-                  <SelectItem value="+49">🇩🇪 +49 (Germany)</SelectItem>
-                  <SelectItem value="+33">🇫🇷 +33 (France)</SelectItem>
-                  <SelectItem value="+81">🇯🇵 +81 (Japan)</SelectItem>
-                  {/* Add more country codes here as needed */}
-                  <SelectItem value="+86">🇨🇳 +86 (China)</SelectItem>
-                  <SelectItem value="+61">🇦🇺 +61 (Australia)</SelectItem>
-                  <SelectItem value="+52">🇲🇽 +52 (Mexico)</SelectItem>
-                  <SelectItem value="+55">🇧🇷 +55 (Brazil)</SelectItem>
-                  <SelectItem value="+7">🇷🇺 +7 (Russia)</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <Label>Mobile Number</Label>
-            <Input
-              type="tel"
-              placeholder="10-digit mobile number"
-              value={formData.mobile}
-              onChange={(e) => handleInputChange("mobile", e.target.value)}
-            />
-
-            <Button
-              className="w-full"
-              onClick={async () => {
-                const mobileRegex = /^\d{10}$/;
-                if (!mobileRegex.test(formData.mobile)) {
-                  toast({ title: "Invalid Mobile", description: "Enter valid 10-digit number", variant: "destructive" });
-                  return;
-                }
-
-                try {
-                  const success = await signup(googleEmail, "google-auth", formData.mobile, formData.countryCode);
-                  if (success) {
-                    toast({ title: "Signup Successful", description: "Please complete your profile" });
-                    setAskPhone(false);
-                    navigate("/basic-info");
-                  } else {
-                    toast({ title: "Signup Failed", description: "Email already exists", variant: "destructive" });
-                  }
-                } catch (err) {
-                  console.error("Google signup error:", err);
-                  toast({ title: "Error", description: "Google signup failed", variant: "destructive" });
-                }
-              }}
-            >
-              Continue
-            </Button>
-            <Button variant="ghost" className="w-full" onClick={() => setAskPhone(false)}>
-              Cancel
-            </Button>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

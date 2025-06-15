@@ -18,7 +18,12 @@ interface User {
 interface AuthContextType {
   user: User | null;
   login: (email: string, password: string) => Promise<boolean>;
-  signup: (email: string, password: string, mobile: string, countryCode: string) => Promise<boolean>;
+  signup: (
+    email: string,
+    password: string,
+    mobile: string,
+    countryCode: string
+  ) => Promise<boolean>;
   logout: () => void;
   updateProfile: (profileData: Partial<User>) => void;
   isLoading: boolean;
@@ -41,7 +46,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Check for existing user session
     const storedUser = localStorage.getItem('user');
     if (storedUser) {
       setUser(JSON.parse(storedUser));
@@ -51,16 +55,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
-      const response = await fetch("http://localhost:3001/api/login", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+      const response = await fetch('http://localhost:3001/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
       });
-  
+
       const data = await response.json();
-  
+
       if (data.success) {
         const userFromDB: User = {
           id: data.user_id.toString(),
@@ -68,63 +70,50 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           mobile: data.mobile,
           isProfileComplete: false,
         };
-  
+
         setUser(userFromDB);
-        localStorage.setItem("user", JSON.stringify(userFromDB));
+        localStorage.setItem('user', JSON.stringify(userFromDB));
         return true;
       } else {
         return false;
       }
     } catch (error) {
-      console.error("Login error:", error);
+      console.error('Login error:', error);
       return false;
     }
   };
-  // const signup = async (email, password) => {
-  //   try {
-  //     const res = await axios.post("/api/signup", { email, password });
-  //     return res.data.success;
-  //   } catch (err) {
-  //     console.error("Signup error:", err);
-  //     return false;
-  //   }
-  // };
-  const signup = async (email: string, password: string, mobile: string, countryCode: string): Promise<boolean> => {
+
+  const signup = async (
+    email: string,
+    password: string,
+    mobile: string,
+    countryCode: string
+  ): Promise<boolean> => {
     try {
-      // Make API call to backend server
-      const response = await fetch("http://localhost:3001/api/signup", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          email,
-          password,
-          mobile,
-          countryCode,
-        }),
+      const response = await fetch('http://localhost:3001/api/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, mobile, countryCode }),
       });
-      
+
       const data = await response.json();
-      
+
       if (data.success) {
-        // Create user object for local state
-      const newUser: User = {
-        id: Date.now().toString(),
-        email,
-        mobile,
-        isProfileComplete: false
-      };
-      
-      // Store user with password for login
+        const newUser: User = {
+          id: Date.now().toString(),
+          email,
+          mobile,
+          isProfileComplete: false,
+        };
+
+        // Store user with password for login (if needed)
         const users = JSON.parse(localStorage.getItem('users') || '[]');
-      const userWithPassword = { ...newUser, password };
-      users.push(userWithPassword);
-      localStorage.setItem('users', JSON.stringify(users));
-      
-      setUser(newUser);
-      localStorage.setItem('user', JSON.stringify(newUser));
-      return true;
+        users.push({ ...newUser, password });
+        localStorage.setItem('users', JSON.stringify(users));
+
+        setUser(newUser);
+        localStorage.setItem('user', JSON.stringify(newUser));
+        return true;
       } else {
         return false;
       }
@@ -144,8 +133,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const updatedUser = { ...user, ...profileData };
       setUser(updatedUser);
       localStorage.setItem('user', JSON.stringify(updatedUser));
-      
-      // Update in users array too
+
       const users = JSON.parse(localStorage.getItem('users') || '[]');
       const userIndex = users.findIndex((u: any) => u.id === user.id);
       if (userIndex !== -1) {
@@ -157,30 +145,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const loginWithGoogle = async (credential: string): Promise<boolean> => {
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // For demo, just create a user with the email from credential
-      const decoded = JSON.parse(atob(credential.split('.')[1]));
-      const email = decoded.email;
-      
-      const users = JSON.parse(localStorage.getItem('users') || '[]');
-      let user = users.find((u: any) => u.email === email);
-      
-      if (!user) {
-        // Create new user if doesn't exist
-        user = {
-          id: Date.now().toString(),
-          email,
-          isProfileComplete: false
+      const response = await fetch('http://localhost:3001/api/google-auth-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: credential }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        const googleUser: User = {
+          id: data.user.user_id.toString(),
+          email: data.user.email,
+          firstName: data.user.first_name,
+          lastName: data.user.last_name,
+          mobile: data.user.phone,
+          gender: data.user.gender,
+          dateOfBirth: data.user.date_of_birth,
+          collegeName: data.user.college_name,
+          isProfileComplete: true,
         };
-        users.push(user);
-        localStorage.setItem('users', JSON.stringify(users));
+
+        setUser(googleUser);
+        localStorage.setItem('user', JSON.stringify(googleUser));
+        return true;
+      } else {
+        console.error('Google login failed:', data.message);
+        return false;
       }
-      
-      setUser(user);
-      localStorage.setItem('user', JSON.stringify(user));
-      return true;
     } catch (error) {
       console.error('Google login error:', error);
       return false;
@@ -195,7 +187,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     updateProfile,
     isLoading,
     loginWithGoogle,
-    setUser
+    setUser,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

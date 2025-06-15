@@ -1,3 +1,4 @@
+// Login.tsx
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +14,7 @@ import { Eye, EyeOff } from "lucide-react";
 import { useNavigate, Link } from "react-router-dom";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "../contexts/AuthContext";
+import { GoogleLogin } from "@react-oauth/google";
 
 const Login = () => {
   const [email, setEmail] = useState("");
@@ -31,7 +33,7 @@ const Login = () => {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-  
+
     try {
       const res = await fetch("http://localhost:3001/api/login", {
         method: "POST",
@@ -40,15 +42,15 @@ const Login = () => {
         },
         body: JSON.stringify({ email, password }),
       });
-  
+
       const data = await res.json();
-  
+
       if (res.ok && data.success) {
         toast({ title: "Login successful", description: "Welcome back!" });
         setUser({
           id: data.user_id?.toString() || Date.now().toString(),
           email,
-          isProfileComplete: false,
+          isProfileComplete: true,
         });
         navigate("/dashboard");
       } else {
@@ -70,6 +72,44 @@ const Login = () => {
     }
   };
 
+  const handleGoogleLogin = async (credentialResponse: any) => {
+    try {
+      const token = credentialResponse?.credential;
+      if (!token) throw new Error("No token received");
+
+      const res = await fetch("http://localhost:3001/api/google-auth-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        toast({ title: "Login successful", description: "Welcome back!" });
+        setUser({
+          id: data.user_id?.toString() || Date.now().toString(),
+          email: data.email,
+          isProfileComplete: true,
+        });
+        navigate("/dashboard");
+      } else {
+        toast({
+          title: "Google Login failed",
+          description: data.message || "User not found in our system",
+          variant: "destructive",
+        });
+      }
+    } catch (err) {
+      console.error("Google login error:", err);
+      toast({
+        title: "Error",
+        description: "Failed to login with Google",
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background to-secondary p-4">
       <Card className="w-full max-w-md shadow-xl">
@@ -80,6 +120,25 @@ const Login = () => {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {/* Google Login at the top */}
+          <div className="flex justify-center mb-4">
+            <GoogleLogin
+              onSuccess={handleGoogleLogin}
+              onError={() =>
+                toast({
+                  title: "Google Login Failed",
+                  description: "Please try again later.",
+                  variant: "destructive",
+                })
+              }
+              useOneTap
+            />
+          </div>
+          <div className="flex items-center my-4">
+            <div className="flex-grow h-px bg-muted-foreground/30" />
+            <span className="mx-4 text-muted-foreground text-sm">or sign in with email</span>
+            <div className="flex-grow h-px bg-muted-foreground/30" />
+          </div>
           <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
