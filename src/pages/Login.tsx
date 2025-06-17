@@ -176,12 +176,11 @@ const Login = () => {
                 </Button>
               </div>
             </div>
-
-            <div className="flex items-center justify-between text-sm">
-              <Link to="/forgot-password" className="text-primary hover:underline">
-                Forgot password?
-              </Link>
-            </div>
+            <div className="mt-2 text-center">
+  <Link to="/forgot-password" className="text-sm text-primary hover:underline">
+    Forgot Password?
+  </Link>
+</div>
 
             <Button
               type="submit"

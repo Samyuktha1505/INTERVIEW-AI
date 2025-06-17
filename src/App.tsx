@@ -15,6 +15,8 @@ import EditProfile from "./pages/EditProfile";
 import NotFound from "./pages/NotFound";
 import ProtectedRoute from "./components/ProtectedRoute";
 import LiveInterviewSession from "./pages/LiveInterviewSession"; 
+import ForgotPassword from "@/pages/Forgotpassword";
+
 
 const queryClient = new QueryClient();
 
@@ -40,6 +42,7 @@ const App = () => (
                   </ProtectedRoute>
                 }
               />
+              <Route path="/forgot-password" element={<ForgotPassword />} />
               <Route path="/interview-session/:roomId" element={<ProtectedRoute><LiveInterviewSession /></ProtectedRoute>} />
 
               <Route path="*" element={<NotFound />} />

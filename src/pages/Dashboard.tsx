@@ -12,6 +12,7 @@ import { ReportModal } from '../components/ReportModal';
 import { generateAndFetchMetrics, Metrics } from '../services/metricsService';
 import { checkCompletedSessions } from '../services/interviewService';
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import ResetPassword from '../components/ResetPassword';
 
 const Dashboard = () => {
   const { user, logout } = useAuth();
@@ -23,6 +24,11 @@ const Dashboard = () => {
   const [selectedMetrics, setSelectedMetrics] = useState<Metrics | null>(null);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [completedRoomIds, setCompletedRoomIds] = useState<Set<string>>(new Set());
+  const [showResetPassword, setShowResetPassword] = useState(false);
+  const [oldPassword, setOldPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [resetLoading, setResetLoading] = useState(false);
 
   const userRooms = rooms.filter(room => room.userId === user?.id);
 
@@ -110,6 +116,13 @@ const Dashboard = () => {
             <p className="text-xs text-muted-foreground">{user?.email}</p>
           </div>
         </div>
+        <Button 
+          className="w-full mb-2" 
+          onClick={() => setShowResetPassword(true)}
+        >
+          <Settings className="mr-2 h-4 w-4" />
+          Reset Password
+        </Button>
         <Button 
           className="w-full" 
           onClick={handleLogout}
@@ -284,6 +297,77 @@ const Dashboard = () => {
         onClose={() => setIsReportModalOpen(false)}
         metrics={selectedMetrics}
       />
+      {showResetPassword && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-sm space-y-4 shadow-xl">
+            <h2 className="text-lg font-semibold text-center">Reset Password</h2>
+            <label className="block text-sm font-medium">Old Password</label>
+            <input
+              type="password"
+              className="w-full border rounded px-3 py-2 mb-2"
+              value={oldPassword}
+              onChange={e => setOldPassword(e.target.value)}
+            />
+            <label className="block text-sm font-medium">New Password</label>
+            <input
+              type="password"
+              className="w-full border rounded px-3 py-2 mb-2"
+              value={newPassword}
+              onChange={e => setNewPassword(e.target.value)}
+            />
+            <label className="block text-sm font-medium">Confirm New Password</label>
+            <input
+              type="password"
+              className="w-full border rounded px-3 py-2 mb-4"
+              value={confirmPassword}
+              onChange={e => setConfirmPassword(e.target.value)}
+            />
+            <div className="flex gap-2">
+              <Button
+                className="w-full"
+                disabled={resetLoading}
+                onClick={async () => {
+                  if (!oldPassword || !newPassword || !confirmPassword) {
+                    toast({ title: "Validation Error", description: "All fields are required", variant: "destructive" });
+                    return;
+                  }
+                  if (newPassword !== confirmPassword) {
+                    toast({ title: "Validation Error", description: "New passwords do not match", variant: "destructive" });
+                    return;
+                  }
+                  setResetLoading(true);
+                  try {
+                    const res = await fetch("http://localhost:3001/api/reset-password", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ email: user?.email, oldPassword, newPassword })
+                    });
+                    const data = await res.json();
+                    if (res.ok && data.success) {
+                      toast({ title: "Password Reset", description: "Password updated successfully" });
+                      setShowResetPassword(false);
+                      setOldPassword("");
+                      setNewPassword("");
+                      setConfirmPassword("");
+                    } else {
+                      toast({ title: "Reset Failed", description: data.message || "Could not reset password", variant: "destructive" });
+                    }
+                  } catch (err) {
+                    toast({ title: "Error", description: "Server error", variant: "destructive" });
+                  } finally {
+                    setResetLoading(false);
+                  }
+                }}
+              >
+                {resetLoading ? "Resetting..." : "Reset Password"}
+              </Button>
+              <Button variant="ghost" className="w-full" onClick={() => setShowResetPassword(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,3 +1,4 @@
+process.removeAllListeners('warning');
 import express from "express";
 import mysql from "mysql2";
 import cors from "cors";
@@ -7,6 +8,7 @@ import path from "path";
 import AWS from "aws-sdk";
 import dotenv from "dotenv";
 import bcrypt from "bcrypt";
+import nodemailer from "nodemailer";
 import { OAuth2Client } from "google-auth-library";
 
 // Suppress AWS maintenance message
@@ -248,7 +250,120 @@ app.post('/api/google-auth-login', async (req, res) => {
   }
 });
 
-// ✅ Start server
+// Configure email transporter (replace with your SMTP details)
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
+});
+
+// Store OTPs temporarily (in production, use Redis or database)
+const otpStore = new Map();
+
+// Generate random 6-digit OTP
+function generateOTP() {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+// Forgot password - send OTP
+app.post('/api/forgot-password', async (req, res) => {
+  const { email } = req.body;
+
+  try {
+    // Check if email exists in database
+    const user = await db.promise().query('SELECT * FROM User WHERE email = ?', [email]);
+    
+    if (user[0].length === 0) {
+      return res.status(404).json({ success: false, message: 'Email doesnt exists,please signup to continue' });
+    }
+
+    // Generate OTP
+    const otp = generateOTP();
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // OTP expires in 15 minutes
+
+    // Store OTP temporarily
+    otpStore.set(email, { otp, expiresAt });
+
+    // Send email with OTP
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: email,
+      subject: 'Password Reset OTP',
+      text: `Your OTP for password reset is: ${otp}\nThis OTP will expire in 15 minutes.`,
+      html: `<p>Your OTP for password reset is: <strong>${otp}</strong></p><p>This OTP will expire in 15 minutes.</p>`,
+    };
+
+    await transporter.sendMail(mailOptions);
+
+    res.json({ success: true, message: 'OTP sent successfully' });
+  } catch (error) {
+    console.error('Error in forgot password:', error);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+// Verify OTP
+app.post('/api/verify-otp', async (req, res) => {
+  const { email, otp } = req.body;
+
+  try {
+    const storedData = otpStore.get(email);
+
+    if (!storedData) {
+      return res.status(400).json({ success: false, message: 'OTP expired or not found' });
+    }
+
+    if (new Date() > storedData.expiresAt) {
+      otpStore.delete(email);
+      return res.status(400).json({ success: false, message: 'OTP expired' });
+    }
+
+    if (storedData.otp !== otp) {
+      return res.status(400).json({ success: false, message: 'Invalid OTP' });
+    }
+
+    // OTP is valid
+    res.json({ success: true, message: 'OTP verified successfully' });
+  } catch (error) {
+    console.error('Error verifying OTP:', error);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+// Reset password
+app.post('/api/reset-password', async (req, res) => {
+  const { email, otp, newPassword } = req.body;
+
+  try {
+    // Verify OTP again (in case user took too long)
+    const storedData = otpStore.get(email);
+
+    if (!storedData || storedData.otp !== otp) {
+      return res.status(400).json({ success: false, message: 'Invalid OTP' });
+    }
+
+    // Hash new password
+    const saltRounds = 10;
+    const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
+
+    // Update password in database
+    await db.promise().query(
+      'UPDATE HASH SET hash_password = ? WHERE email = ?',
+      [hashedPassword, email]
+    );
+
+    // Remove OTP from store
+    otpStore.delete(email);
+
+    res.json({ success: true, message: 'Password updated successfully' });
+  } catch (error) {
+    console.error('Error resetting password:', error);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
 app.listen(port, () => {
   console.log(`🚀 Server running on http://localhost:${port}`);
 });
