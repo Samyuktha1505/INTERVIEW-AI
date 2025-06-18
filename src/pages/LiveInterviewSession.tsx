@@ -1,3 +1,5 @@
+// LiveInterviewSession.tsx
+
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { LiveAPIProvider, useLiveAPIContext } from "../contexts/LiveAPIContext";
@@ -8,7 +10,13 @@ import cn from "classnames";
 import { LiveClientOptions } from "../types";
 import "../LiveInterviewSession.scss";
 import { Loader2 } from "lucide-react";
-import { ResumeAnalysisResponse } from "../services/resumeAnalysis";
+// IMPORT CHANGE: No longer expecting ExtractedFields at this level for the response
+// Remove the ExtractedFields part from the interface if it's still there
+// Ensure ResumeAnalysisResponse is defined as:
+// export interface ResumeAnalysisResponse {
+//   Questionnaire_prompt: Question[];
+// }
+import { ResumeAnalysisResponse, Question } from "../services/resumeAnalysis"; // Ensure Question is also imported if used directly
 import { useChatStore } from "../lib/store-chat";
 import { SessionTranscription } from "../lib/session-transcription";
 import { useWebcam } from "../hooks/use-webcam";
@@ -39,8 +47,6 @@ const LiveInterviewSessionContent = () => {
   const [audioRecorder] = useState(() => new AudioRecorder());
   const { disconnect } = useLiveAPIContext();
 
-  // MODIFIED: The dependency array now correctly and safely includes all dependencies.
-  // This ensures the cleanup function has fresh references and runs reliably.
   useEffect(() => {
     sessionEndedRef.current = false;
     useChatStore.getState().clearChat();
@@ -76,11 +82,16 @@ const LiveInterviewSessionContent = () => {
         try {
           const response = await fetchAnalysis(roomId);
           if (response.ok) {
-            const analysisData = await response.json() as ResumeAnalysisResponse;
-            if (analysisData && analysisData.Questionnaire_prompt) {
+            // CRUCIAL CHANGE: Cast to the correct interface from services/resumeAnalysis
+            // The ResumeAnalysisResponse should now only contain Questionnaire_prompt
+            const analysisData: ResumeAnalysisResponse = await response.json(); 
+            
+            // Now, analysisData.Questionnaire_prompt is directly available
+            if (analysisData.Questionnaire_prompt) {
               setInitialPrompt(JSON.stringify(analysisData.Questionnaire_prompt));
             } else {
-              throw new Error("Analysis data is in an invalid format.");
+              // This error means the backend returned something unexpected even if 200 OK
+              throw new Error("Analysis data is in an invalid format (missing Questionnaire_prompt).");
             }
             setIsLoading(false);
             return;

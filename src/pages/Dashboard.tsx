@@ -12,7 +12,6 @@ import { ReportModal } from '../components/ReportModal';
 import { generateAndFetchMetrics, Metrics } from '../services/metricsService';
 import { checkCompletedSessions } from '../services/interviewService';
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import ResetPassword from '../components/ResetPassword';
 
 const Dashboard = () => {
   const { user, logout } = useAuth();
@@ -337,7 +336,7 @@ const Dashboard = () => {
                   }
                   setResetLoading(true);
                   try {
-                    const res = await fetch("http://localhost:3001/api/reset-password", {
+                    const res = await fetch("http://localhost:8000/api/reset-password", {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({ email: user?.email, oldPassword, newPassword })

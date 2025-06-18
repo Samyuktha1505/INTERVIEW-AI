@@ -46,7 +46,7 @@ const ForgotPassword = () => {
     setIsLoading(true);
 
     try {
-      const res = await fetch("http://localhost:3001/api/forgot-password", {
+      const res = await fetch("http://localhost:8000/api/forgot-password", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -87,7 +87,7 @@ const ForgotPassword = () => {
     setIsLoading(true);
 
     try {
-      const res = await fetch("http://localhost:3001/api/verify-otp", {
+      const res = await fetch("http://localhost:8000/api/verify-otp", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -138,7 +138,7 @@ const ForgotPassword = () => {
     }
 
     try {
-      const res = await fetch("http://localhost:3001/api/reset-password", {
+      const res = await fetch("http://localhost:8000/api/reset-password", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

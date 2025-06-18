@@ -1,3 +1,5 @@
+# prompts.py
+
 def llm1_prompt(
     resume_text: str,
     target_role: str,
@@ -9,6 +11,7 @@ def llm1_prompt(
 ) -> str:
     """
     Generates a prompt for the LLM to analyze a resume and create interview questions.
+    Updated: Aligned Extracted_fields to match the provided Resume table schema.
     """
     question_type_instruction = ""
     if interview_type and interview_type.lower() != "general":
@@ -30,23 +33,54 @@ def llm1_prompt(
             {resume_text}
             </Resume>
 
-        2.  **Generate Interview Questionnaire**: Based on the resume, create a comprehensive questionnaire.
+        2.  **Generate Interview Questionnaire**: Based on the candidate's resume, their current designation of '{current_designation}', their {years_of_experience} years of experience, and the target role of '{target_role}' at '{target_company}', create a comprehensive interview questionnaire.
             {question_type_instruction}
             Ensure all questions are highly tailored to the candidate's background and the specific role.
 
-        3.  **Output Format**: Your entire response MUST be a single, parsable JSON string with two top-level keys: "Extracted_fields" and "Questionnaire_prompt".
+        3.  **Output Format**: Your entire response MUST be a single, parsable JSON string with **two** top-level keys: "Extracted_fields" and "Questionnaire_prompt".
 
-            "Extracted_fields" should be a JSON object containing fields like "name", "email", "skills", "projects", etc.
+            "Extracted_fields" should be a JSON object containing the following fields, directly mapping to the database schema:
+            "full_name", "email_address", "mobile_number", "graduation_college",
+            "education_degree", "certifications", "skills", "projects", "current_company",
+            "previous_companies", "current_location", "current_role", "work_experience".
+            Please map these from the resume content:
+            - "full_name": Full name of the candidate.
+            - "email_address": Candidate's email address.
+            - "mobile_number": Candidate's phone number.
+            - "graduation_college": The name of the candidate's primary or most recent graduating college/university.
+            - "education_degree": The candidate's primary or most recent degree (e.g., "B.Tech in Computer Science").
+            - "certifications": A comma-separated string or array of professional certifications.
+            - "skills": A comma-separated string or array of key technical and soft skills.
+            - "projects": A comma-separated string or array of notable projects, including brief descriptions if possible.
+            - "current_company": The name of the candidate's current employer.
+            - "previous_companies": A comma-separated string or array of names of previous employers.
+            - "current_location": Candidate's current city and state/country.
+            - "current_role": The candidate's current job title.
+            - "work_experience": A textual summary of the candidate's overall work experience, including duration and key responsibilities/achievements.
 
-            "Questionnaire_prompt" should be a JSON array of question objects, each with "id", "question", and "type".
+            "Questionnaire_prompt" should be a JSON array of question objects, each with "id" (a unique number), "question" (the actual question string), and "type" (e.g., "Technical", "Behavioral", "Situational", "Project-based", or the specific interviewType if provided).
 
             Example of the overall JSON structure:
             ```json
             {{
-                "Extracted_fields": {{ "name": "John Doe", "email": "john.doe@example.com", ... }},
+                "Extracted_fields": {{
+                    "full_name": "Jane Doe",
+                    "email_address": "jane.doe@example.com",
+                    "mobile_number": "987-654-3210",
+                    "graduation_college": "State University",
+                    "education_degree": "M.Sc. Computer Science",
+                    "certifications": "AWS Certified Solutions Architect, Certified ScrumMaster",
+                    "skills": "Java, Spring Boot, AWS, Microservices, REST APIs, Agile, SQL",
+                    "projects": "Enterprise CRM System (developed user management), Distributed Data Platform (optimized data ingestion)",
+                    "current_company": "Innovate Corp",
+                    "previous_companies": "Tech Solutions Inc., Global Innovations",
+                    "current_location": "San Francisco, CA",
+                    "current_role": "Software Architect",
+                    "work_experience": "5 years of experience in full-stack development, specializing in designing scalable enterprise applications and leading cross-functional teams."
+                }},
                 "Questionnaire_prompt": [
-                    {{ "id": 1, "question": "...", "type": "{interview_type}" }},
-                    {{ "id": 2, "question": "...", "type": "{interview_type}" }}
+                    {{"id": 1, "question": "Can you explain your approach to designing scalable microservices, drawing from your experience at Innovate Corp?", "type": "Technical"}},
+                    {{"id": 2, "question": "Describe a time you faced a significant technical challenge in one of your projects and how you overcame it.", "type": "Behavioral"}}
                 ]
             }}
             ```
@@ -54,42 +88,39 @@ def llm1_prompt(
         """
     return prompt
 
-
 def generate_metrics_prompt(transcript_text: str) -> str:
     """
-    Creates a prompt to generate performance metrics from an interview transcript.
-    (This is the updated version from the llm3 folder)
+    Generates a prompt for the LLM to evaluate a candidate's interview performance
+    based on the transcript and provide a score and remarks.
     """
     prompt = f"""
-    You are an expert Interview Analyst and Talent Acquisition Specialist. Your task is to analyze the following interview transcript and provide a structured JSON output containing performance metrics.
+    You are an expert interviewer and evaluator. Analyze the following interview transcript
+    and provide a detailed assessment of the candidate's performance across key areas.
 
-    Analyze the entire conversation between the "AGENT" (the interviewer) and the "USER" (the candidate).
-
+    Transcript:
     <Transcript>
     {transcript_text}
     </Transcript>
 
-    Based on the transcript, provide the following metrics in a strict JSON format. Do not include any explanatory text outside of the JSON block.
+    Your assessment should be formatted as a single JSON object with the following keys:
+    - "technical_rating": An integer rating from 1 to 5 (1 = Poor, 5 = Excellent) on technical knowledge and problem-solving.
+    - "communication_rating": An integer rating from 1 to 5 on clarity, coherence, and conciseness of communication.
+    - "problem_solving_rating": An integer rating from 1 to 5 on their approach to solving problems, logical thinking, and creativity.
+    - "overall_rating": An integer rating from 1 to 5 representing the overall performance.
+    - "remarks": A concise textual summary (max 3-4 sentences) highlighting the candidate's strengths, weaknesses, and areas for improvement.
+    - "suspicious_flag": A boolean (true/false) indicating if there's any suspicion of AI assistance, cheating, or dishonesty during the interview (e.g., overly perfect answers, lack of natural hesitation, inconsistencies). Set to true ONLY if strong indications are present.
 
-    1.  technical_rating: A score from 0.00 to 10.00 representing the candidate's technical skills and knowledge.
-    2.  communication_rating: A score from 0.00 to 10.00 evaluating the candidate's clarity, confidence, and articulation.
-    3.  problem_solving_rating: A score from 0.00 to 10.00 based on logical reasoning and problem-solving approach.
-    4.  overall_rating: A score from 0.00 to 10.00 representing the candidate's overall interview performance.
-    5.  remarks: A brief summary (2–3 sentences) highlighting the candidate’s strengths and areas of improvement.
-    6.  suspicious_flag: A boolean (true/false) indicating if any signs of suspicious behavior or cheating were observed (e.g., irrelevant or unusually fast responses, inconsistency in answers).
-
-    OUTPUT FORMAT:
+    Example Output:
     ```json
     {{
-        "Metrics": {{
-            "technical_rating": 0.0,
-            "communication_rating": 0.0,
-            "problem_solving_rating": 0.0,
-            "overall_rating": 0.0,
-            "remarks": "",
-            "suspicious_flag": false
-        }}
+      "technical_rating": 4,
+      "communication_rating": 3,
+      "problem_solving_rating": 4,
+      "overall_rating": 4,
+      "remarks": "The candidate demonstrated strong technical knowledge in algorithms and data structures. Communication was generally clear but could be more concise. Showed a good structured approach to problem-solving. Needs to work on explaining complex ideas simply.",
+      "suspicious_flag": false
     }}
     ```
+    Ensure your output is only the JSON object, without any surrounding text or markdown.
     """
     return prompt

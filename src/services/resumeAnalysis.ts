@@ -31,12 +31,11 @@ export interface Question {
   type: string;
 }
 
-// This interface matches the final JSON object returned by your main.py endpoint.
+// THIS IS THE INTERFACE THAT NEEDS TO CHANGE
+// This interface now ONLY matches the JSON object returned by your main.py endpoint for /v1/analyze_resume/.
 export interface ResumeAnalysisResponse {
-  Extracted_fields: ExtractedFields;
-  Questionnaire_prompt: Question[];
+  Questionnaire_prompt: Question[]; // Only include what the backend returns
 }
-
 
 // --- API Call Function ---
 
@@ -47,15 +46,13 @@ export interface ResumeAnalysisResponse {
  * @returns {Promise<ResumeAnalysisResponse>} A promise that resolves to the analysis result from the backend.
  */
 export const analyzeResume = async (
-  formData: FormData // MODIFIED: The function now directly accepts a FormData object.
-): Promise<ResumeAnalysisResponse> => {
+  formData: FormData
+): Promise<ResumeAnalysisResponse> => { // Use the updated interface here
 
   // --- DEBUGGING START ---
   console.log('--- analyzeResume Function Call Started ---');
   console.log('--- FormData Content Received (before fetch) ---');
-  // Iterate over formData entries to see what will actually be sent
   for (let pair of formData.entries()) {
-    // Note: For files, pair[1] will be the File object itself, not its content.
     console.log(`  Key: "${pair[0]}", Value: ${pair[1] instanceof File ? pair[1].name : pair[1]}`);
   }
   console.log('------------------------------------');
@@ -66,39 +63,34 @@ export const analyzeResume = async (
 
     const response = await fetch(apiEndpoint, {
       method: 'POST',
-      body: formData, // Directly use the FormData object passed into the function.
-      // The browser automatically sets the 'Content-Type' header to 'multipart/form-data' with the correct boundary.
+      body: formData,
     });
 
     console.log('Received HTTP Response Status:', response.status);
     console.log('Received HTTP Response OK Status (2xx):', response.ok);
 
     if (!response.ok) {
-      const errorBody = await response.text(); // Get raw text to handle various error formats
+      const errorBody = await response.text();
       console.error('Backend returned a non-OK response. Raw error body:', errorBody);
 
       let errorMessage = `Resume analysis failed: ${response.statusText} (${response.status})`;
 
       try {
         const errorJson = JSON.parse(errorBody);
-        // Prioritize a 'detail' field from FastAPI errors
         if (errorJson.detail) {
           errorMessage = `Resume analysis failed: ${errorJson.detail}`;
         } else {
-          // If no 'detail' but it's valid JSON, stringify it for clarity
           errorMessage = `Resume analysis failed: ${JSON.stringify(errorJson, null, 2)}`;
         }
       } catch (e) {
-        // If parsing as JSON fails, use the raw text body
         console.warn('Could not parse error response as JSON. Using raw text.');
-        errorMessage = `Resume analysis failed: ${response.statusText}. Response: ${errorBody.substring(0, 200)}...`; // Truncate for console readability
+        errorMessage = `Resume analysis failed: ${response.statusText}. Response: ${errorBody.substring(0, 200)}...`;
       }
       console.error('Final error message to be thrown:', errorMessage);
       throw new Error(errorMessage);
     }
 
-    // If response.ok is true, parse as JSON
-    const jsonResponse = await response.json();
+    const jsonResponse: ResumeAnalysisResponse = await response.json(); // Cast to the updated interface
     console.log('Successfully received JSON response from backend:', jsonResponse);
     console.log('--- analyzeResume Function Call Finished (Success) ---');
 
@@ -107,7 +99,6 @@ export const analyzeResume = async (
   } catch (err: any) {
     console.error('An error occurred during the fetch operation or subsequent processing:', err);
     console.log('--- analyzeResume Function Call Finished (Error) ---');
-    // Re-throw the error with a useful message
     throw new Error(err.message || "An unknown network or processing error occurred during resume analysis.");
   }
 };

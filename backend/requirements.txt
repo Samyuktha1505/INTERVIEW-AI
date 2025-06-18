@@ -6,5 +6,9 @@ google
 google-generativeai
 google-genai
 PyMuPDF
-pydantic_settings
+pydantic-settings
 python-multipart
+passlib[bcrypt]
+python-jose[cryptography]
+google-auth-oauthlib
+aiohttp

@@ -35,7 +35,7 @@ const Login = () => {
     setIsLoading(true);
 
     try {
-      const res = await fetch("http://localhost:3001/api/login", {
+      const res = await fetch("http://localhost:8000/api/login", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -77,7 +77,7 @@ const Login = () => {
       const token = credentialResponse?.credential;
       if (!token) throw new Error("No token received");
 
-      const res = await fetch("http://localhost:3001/api/google-auth-login", {
+      const res = await fetch("http://localhost:8000/api/google-auth-login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token }),

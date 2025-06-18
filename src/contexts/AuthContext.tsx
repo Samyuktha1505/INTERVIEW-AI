@@ -55,7 +55,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
-      const response = await fetch('http://localhost:3001/api/login', {
+      // Changed from 3001 to 8000
+      const response = await fetch('http://localhost:8000/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
@@ -65,10 +66,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (data.success) {
         const userFromDB: User = {
-          id: data.user_id.toString(),
+          id: data.user_id.toString(), // user_id is directly in data
           email: email,
-          mobile: data.mobile,
-          isProfileComplete: false,
+          // mobile and isProfileComplete are not directly returned by /api/login in current main.py
+          // You might need to fetch full user details from another endpoint after login if needed immediately
+          isProfileComplete: false, // Assume not complete until basic-info is confirmed
         };
 
         setUser(userFromDB);
@@ -90,7 +92,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     countryCode: string
   ): Promise<boolean> => {
     try {
-      const response = await fetch('http://localhost:3001/api/signup', {
+      // Changed from 3001 to 8000
+      const response = await fetch('http://localhost:8000/api/signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password, mobile, countryCode }),
@@ -100,15 +103,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (data.success) {
         const newUser: User = {
-          id: Date.now().toString(),
+          id: data.user_id.toString(), // user_id is directly in data
           email,
           mobile,
-          isProfileComplete: false,
+          isProfileComplete: false, // Profile not complete yet
         };
 
-        // Store user with password for login (if needed)
+        // You might not need to store password in localStorage for security reasons.
+        // It's generally better to rely on successful authentication token/session.
+        // If 'users' localStorage is just for local dev state, then keep it, otherwise remove.
         const users = JSON.parse(localStorage.getItem('users') || '[]');
-        users.push({ ...newUser, password });
+        users.push({ ...newUser, password }); // Consider removing password here
         localStorage.setItem('users', JSON.stringify(users));
 
         setUser(newUser);
@@ -126,6 +131,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const logout = () => {
     setUser(null);
     localStorage.removeItem('user');
+    localStorage.removeItem('users'); // Clear if 'users' is used for local state
   };
 
   const updateProfile = (profileData: Partial<User>) => {
@@ -137,6 +143,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const users = JSON.parse(localStorage.getItem('users') || '[]');
       const userIndex = users.findIndex((u: any) => u.id === user.id);
       if (userIndex !== -1) {
+        // Only update fields that are present in profileData, preserving others
         users[userIndex] = { ...users[userIndex], ...profileData };
         localStorage.setItem('users', JSON.stringify(users));
       }
@@ -145,7 +152,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const loginWithGoogle = async (credential: string): Promise<boolean> => {
     try {
-      const response = await fetch('http://localhost:3001/api/google-auth-login', {
+      // Changed from 3001 to 8000
+      const response = await fetch('http://localhost:8000/api/google-auth-login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: credential }),
@@ -155,15 +163,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (data.success) {
         const googleUser: User = {
-          id: data.user.user_id.toString(),
-          email: data.user.email,
-          firstName: data.user.first_name,
-          lastName: data.user.last_name,
-          mobile: data.user.phone,
-          gender: data.user.gender,
-          dateOfBirth: data.user.date_of_birth,
-          collegeName: data.user.college_name,
-          isProfileComplete: true,
+          id: data.user_id.toString(), // Direct from data, not data.user
+          email: data.email,       // Direct from data, not data.user
+          isProfileComplete: true, // Assuming Google users are treated as profile complete initially or checked elsewhere
+          // The following fields are NOT returned by current /api/google-auth-login,
+          // so remove them or handle them as optional/fetch separately if needed
+          // firstName: data.user.first_name,
+          // lastName: data.user.last_name,
+          // mobile: data.user.phone,
+          // gender: data.user.gender,
+          // dateOfBirth: data.user.date_of_birth,
+          // collegeName: data.user.college_name,
         };
 
         setUser(googleUser);

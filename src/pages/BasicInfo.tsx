@@ -124,7 +124,7 @@ const BasicInfo = () => {
       }
 
       // Send POST request to your backend API
-      const response = await fetch("http://localhost:3001/api/basic-info", {
+      const response = await fetch("http://localhost:8000/api/basic-info", {
         method: "POST",
         body: form, // FormData object is passed directly. Browser sets Content-Type automatically.
       });
