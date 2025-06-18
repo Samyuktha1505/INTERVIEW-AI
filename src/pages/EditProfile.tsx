@@ -40,7 +40,7 @@ const EditProfile = () => {
       if (user?.email) {
         setIsLoading(true);
         try {
-          const response = await fetch(`http://localhost:3001/api/user-profile?email=${user.email}`);
+          const response = await fetch(`http://localhost:8000/api/user-profile?email=${user.email}`);
           const data = await response.json();
 
           if (response.ok && data.success) {
@@ -185,7 +185,7 @@ const EditProfile = () => {
         form.append("resume", formData.resumeFile);
       }
 
-      const response = await fetch("http://localhost:3001/api/basic-info", {
+      const response = await fetch("http://localhost:8000/api/basic-info", {
         method: "POST",
         body: form,
       });
