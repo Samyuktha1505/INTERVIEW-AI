@@ -28,7 +28,7 @@ const Dashboard = () => {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [resetLoading, setResetLoading] = useState(false);
-
+  const [errorMessage, setErrorMessage] = useState("");
   const userRooms = rooms.filter(room => room.userId === user?.id);
 
   useEffect(() => {
@@ -58,7 +58,19 @@ const Dashboard = () => {
       });
     }
   };
+  // Add this validation function
+const validatePassword = (password: string) => {
+  const minLength = 8;
+  const hasUpperCase = /[A-Z]/.test(password);
+  const hasLowerCase = /[a-z]/.test(password);
+  const hasNumber = /\d/.test(password);
+  const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(password);
   
+  return {
+    isValid: password.length >= minLength && hasUpperCase && hasLowerCase && hasNumber && hasSpecialChar,
+    message: 'Password must be at least 8 characters with uppercase, lowercase, number, and special character'
+  };
+};
   const handleStartInterview = (roomId: string) => {
     navigate(`/interview-session/${roomId}`);
   };
@@ -100,7 +112,7 @@ const Dashboard = () => {
             <Link to="/profile">
                 <Button className="w-full justify-start" onClick={() => setIsSidebarOpen(false)}>
                     <Settings className="mr-2 h-4 w-4" />
-                    Profile
+                    Edit Profile
                 </Button>
             </Link>
         </div>
@@ -297,76 +309,121 @@ const Dashboard = () => {
         metrics={selectedMetrics}
       />
       {showResetPassword && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-sm space-y-4 shadow-xl">
-            <h2 className="text-lg font-semibold text-center">Reset Password</h2>
-            <label className="block text-sm font-medium">Old Password</label>
-            <input
-              type="password"
-              className="w-full border rounded px-3 py-2 mb-2"
-              value={oldPassword}
-              onChange={e => setOldPassword(e.target.value)}
-            />
-            <label className="block text-sm font-medium">New Password</label>
-            <input
-              type="password"
-              className="w-full border rounded px-3 py-2 mb-2"
-              value={newPassword}
-              onChange={e => setNewPassword(e.target.value)}
-            />
-            <label className="block text-sm font-medium">Confirm New Password</label>
-            <input
-              type="password"
-              className="w-full border rounded px-3 py-2 mb-4"
-              value={confirmPassword}
-              onChange={e => setConfirmPassword(e.target.value)}
-            />
-            <div className="flex gap-2">
-              <Button
-                className="w-full"
-                disabled={resetLoading}
-                onClick={async () => {
-                  if (!oldPassword || !newPassword || !confirmPassword) {
-                    toast({ title: "Validation Error", description: "All fields are required", variant: "destructive" });
-                    return;
-                  }
-                  if (newPassword !== confirmPassword) {
-                    toast({ title: "Validation Error", description: "New passwords do not match", variant: "destructive" });
-                    return;
-                  }
-                  setResetLoading(true);
-                  try {
-                    const res = await fetch("http://localhost:8000/api/reset-password", {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ email: user?.email, oldPassword, newPassword })
-                    });
-                    const data = await res.json();
-                    if (res.ok && data.success) {
-                      toast({ title: "Password Reset", description: "Password updated successfully" });
-                      setShowResetPassword(false);
-                      setOldPassword("");
-                      setNewPassword("");
-                      setConfirmPassword("");
-                    } else {
-                      toast({ title: "Reset Failed", description: data.message || "Could not reset password", variant: "destructive" });
-                    }
-                  } catch (err) {
-                    toast({ title: "Error", description: "Server error", variant: "destructive" });
-                  } finally {
-                    setResetLoading(false);
-                  }
-                }}
-              >
-                {resetLoading ? "Resetting..." : "Reset Password"}
-              </Button>
-              <Button variant="ghost" className="w-full" onClick={() => setShowResetPassword(false)}>
-                Cancel
-              </Button>
-            </div>
-          </div>
-        </div>
+  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div className="bg-white rounded-lg p-6 w-full max-w-sm space-y-4 shadow-xl">
+      <h2 className="text-lg font-semibold text-center">Reset Password</h2>
+      
+      {/* Add error message display */}
+      {errorMessage && (
+        <div className="text-red-500 text-sm mb-2">{errorMessage}</div>
       )}
+      
+      <label className="block text-sm font-medium">Old Password</label>
+      <input
+        type="password"
+        className="w-full border rounded px-3 py-2 mb-2"
+        value={oldPassword}
+        onChange={e => {
+          setOldPassword(e.target.value);
+          setErrorMessage('');
+        }}
+      />
+      
+      <label className="block text-sm font-medium">New Password</label>
+      <input
+        type="password"
+        className="w-full border rounded px-3 py-2 mb-2"
+        value={newPassword}
+        onChange={e => {
+          setNewPassword(e.target.value);
+          setErrorMessage('');
+        }}
+      />
+      
+      <label className="block text-sm font-medium">Confirm New Password</label>
+      <input
+        type="password"
+        className="w-full border rounded px-3 py-2 mb-4"
+        value={confirmPassword}
+        onChange={e => {
+          setConfirmPassword(e.target.value);
+          setErrorMessage('');
+        }}
+      />
+      
+      <div className="flex gap-2">
+        <Button
+          className="w-full"
+          disabled={resetLoading}
+          onClick={async () => {
+            // Add validation
+            if (!oldPassword || !newPassword || !confirmPassword) {
+              setErrorMessage('All fields are required');
+              return;
+            }
+            
+            if (newPassword !== confirmPassword) {
+              setErrorMessage('New passwords do not match');
+              return;
+            }
+            
+            const validation = validatePassword(newPassword);
+            if (!validation.isValid) {
+              setErrorMessage(validation.message);
+              return;
+            }
+            
+            setResetLoading(true);
+            try {
+              const formData = new FormData();
+              formData.append("email", user?.email || "");
+              formData.append("old_password", oldPassword);
+              formData.append("new_password", newPassword);
+
+              const res = await fetch("http://localhost:8000/api/reset-password-old", {
+                method: "POST",
+                body: formData,
+              });
+              
+              const data = await res.json();
+              
+              if (res.ok && data.success) {
+                toast({ 
+                  title: "Password Reset", 
+                  description: "Password updated successfully" 
+                });
+                setShowResetPassword(true);
+                setOldPassword("");
+                setNewPassword("");
+                setConfirmPassword("");
+              } else {
+                setErrorMessage(data.message || "Could not reset password");
+              }
+            } catch (err) {
+              setErrorMessage("Server error. Please try again.");
+            } finally {
+              setResetLoading(false);
+            }
+          }}
+        >
+          {resetLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+          {resetLoading ? "Resetting..." : "Reset Password"}
+        </Button>
+        
+        <Button 
+          variant="ghost" 
+          className="w-full" 
+          onClick={() => {
+            setShowResetPassword(false);
+            setErrorMessage('');
+          }}
+        >
+          Cancel
+        </Button>
+      </div>
+    </div>
+  </div>
+)}
     </div>
   );
 };

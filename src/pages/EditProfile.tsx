@@ -76,9 +76,9 @@ const EditProfile = () => {
             setCurrentResumeUrl(userData.resume_url || null);
           } else {
             toast({
-              title: "Error Loading Profile",
-              description: data.message || "Failed to fetch profile data. Please try again.",
-              variant: "destructive",
+              title: "UPDATE",
+              description: data.message || "You can now edit the profile .",
+              variant: "success",
             });
           }
         } catch (error) {

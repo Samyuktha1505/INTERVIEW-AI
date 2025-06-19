@@ -400,8 +400,108 @@ async def get_resume(user_email: str):
         if cursor: cursor.close()
         if db_conn and db_conn.is_connected(): db_conn.close()
 
+# Add this endpoint to your main.py
 
+@app.post("/api/reset-password-old")
+async def reset_password_with_old_password(
+    email: str = Form(...),
+    old_password: str = Form(...),
+    new_password: str = Form(...)
+):
+    """
+    Reset password after verifying old password matches the stored hash.
+    """
+    db_conn = None
+    cursor = None
+    try:
+        # Validate inputs
+        if not all([email, old_password, new_password]):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="All fields are required"
+            )
+
+        if old_password == new_password:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="New password must be different from old password"
+            )
+
+        db_conn = get_db_connection()
+        cursor = db_conn.cursor(dictionary=True)
+
+        # 1. Get the stored hash for this email
+        cursor.execute("""
+            SELECT h.hash_password, u.user_id 
+            FROM HASH h 
+            JOIN User u ON h.email = u.email 
+            WHERE h.email = %s
+        """, (email,))
+        result = cursor.fetchone()
+
+        if not result:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+
+        stored_hash = result['hash_password']
+        user_id = result['user_id']
+
+        # 2. Verify old password matches stored hash
+        if not pwd_context.verify(old_password, stored_hash):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Old password is incorrect"
+            )
+
+        # 3. Hash the new password and update it
+        new_password_hash = pwd_context.hash(new_password)
+        cursor.execute("""
+            UPDATE HASH 
+            SET hash_password = %s 
+            WHERE email = %s
+        """, (new_password_hash, email))
+        db_conn.commit()
+
+        # Log the password change event
+        cursor.execute("""
+            INSERT INTO LoginTrace 
+            (user_id, login_time, ip_address, login_status, location) 
+            VALUES (%s, %s, %s, %s, %s)
+        """, (
+            user_id,
+            datetime.datetime.utcnow(),
+            "system",  # Or get from request if available
+            "PASSWORD_RESET",
+            "N/A"
+        ))
+        db_conn.commit()
+
+        return JSONResponse(content={
+            "success": True,
+            "message": "Password updated successfully"
+        })
+
+    except HTTPException as e:
+        if db_conn:
+            db_conn.rollback()
+        raise e
+    except Exception as e:
+        logging.error(f"Password reset error for {email}: {str(e)}", exc_info=True)
+        if db_conn:
+            db_conn.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while resetting password"
+        )
+    finally:
+        if cursor:
+            cursor.close()
+        if db_conn and db_conn.is_connected():
+            db_conn.close()
 @app.post('/api/google-auth-login')
+
 async def google_auth_login(payload: GoogleAuthPayload):
     token = payload.token
     db_conn = None
