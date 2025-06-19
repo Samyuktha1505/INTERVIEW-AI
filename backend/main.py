@@ -445,39 +445,27 @@ async def google_auth_login(payload: GoogleAuthPayload):
 # Helper to generate OTP (remains the same)
 def generate_otp():
     return str(random.randint(100000, 999999))
-
+otp_storage = {}
 @app.post('/api/forgot-password')
 async def forgot_password(payload: ForgotPasswordPayload):
     email = payload.email
     db_conn = None
     cursor = None
+    
     try:
         db_conn = get_db_connection()
         cursor = db_conn.cursor()
-
         cursor.execute('SELECT user_id FROM User WHERE email = %s', (email,))
         user_exists = cursor.fetchone()
-
+        
         if not user_exists:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Email doesn\'t exist, please signup to continue.')
-
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Email does not exist.')
+      
         otp = generate_otp()
         expires_at = datetime.datetime.now() + datetime.timedelta(minutes=15)
-        
-        # --- Store OTP in the database ---
-        # Using ON DUPLICATE KEY UPDATE to handle existing OTPs
-        sql_insert_otp = """
-            INSERT INTO OtpStore (email, otp, expires_at)
-            VALUES (%s, %s, %s)
-            ON DUPLICATE KEY UPDATE
-                otp = VALUES(otp),
-                expires_at = VALUES(expires_at),
-                created_at = CURRENT_TIMESTAMP;
-        """
-        cursor.execute(sql_insert_otp, (email, otp, expires_at))
-        db_conn.commit()
-        logging.info(f"Generated OTP for {email} and stored in DB: {otp}")
+        otp_storage[email] = {'otp': otp, 'expires_at': expires_at}
 
+        # Send OTP via email (your existing code)
         msg = MIMEText(f"Your OTP for password reset is: {otp}\nThis OTP will expire in 15 minutes.")
         msg['Subject'] = 'Password Reset OTP'
         msg['From'] = settings.email_user
@@ -486,16 +474,13 @@ async def forgot_password(payload: ForgotPasswordPayload):
         transporter = get_email_transporter()
         transporter.send_message(msg)
         transporter.quit()
-        logging.info(f"OTP email sent to {email}")
 
         return JSONResponse(content={"success": True, "message": "OTP sent successfully"})
 
     except HTTPException as e:
-        if db_conn: db_conn.rollback()
         raise e
     except Exception as e:
         logging.error(f"Error in forgot password for {email}: {e}", exc_info=True)
-        if db_conn: db_conn.rollback()
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error.")
     finally:
         if cursor: cursor.close()
@@ -506,49 +491,28 @@ async def forgot_password(payload: ForgotPasswordPayload):
 async def verify_otp(payload: VerifyOtpPayload):
     email = payload.email
     otp = payload.otp
-    db_conn = None
-    cursor = None
 
     try:
-        db_conn = get_db_connection()
-        cursor = db_conn.cursor(dictionary=True)
-
-        # --- Retrieve OTP from the database ---
-        cursor.execute(
-            "SELECT otp, expires_at FROM OtpStore WHERE email = %s",
-            (email,)
-        )
-        stored_data = cursor.fetchone()
-
+        stored_data = otp_storage.get(email)
         if not stored_data:
-            # Using 400 for 'OTP not found' is fine, or 401 if you consider it an authorization failure
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='OTP expired or not found.')
 
         if datetime.datetime.now() > stored_data['expires_at']:
-            # Delete expired OTP from DB
-            cursor.execute("DELETE FROM OtpStore WHERE email = %s", (email,))
-            db_conn.commit()
+            del otp_storage[email]
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='OTP expired.')
 
         if stored_data['otp'] != otp:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Invalid OTP.')
 
-        # OTP is valid, delete it now to prevent reuse
-        cursor.execute("DELETE FROM OtpStore WHERE email = %s", (email,))
-        db_conn.commit()
-        
+        # Mark as verified
+        otp_storage[email]['verified'] = True
         return JSONResponse(content={"success": True, "message": "OTP verified successfully"})
 
     except HTTPException as e:
-        if db_conn: db_conn.rollback()
         raise e
     except Exception as e:
         logging.error(f"Error verifying OTP for {email}: {e}", exc_info=True)
-        if db_conn: db_conn.rollback()
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error.")
-    finally:
-        if cursor: cursor.close()
-        if db_conn and db_conn.is_connected(): db_conn.close()
 
 
 @app.post('/api/reset-password')
@@ -560,42 +524,23 @@ async def reset_password(payload: ResetPasswordPayload):
     db_conn = None
     cursor = None
     try:
-        db_conn = get_db_connection()
-        cursor = db_conn.cursor(dictionary=True) # Use dictionary=True for easier access
-
-        # --- Retrieve OTP from the database for verification ---
-        cursor.execute(
-            "SELECT otp, expires_at FROM OtpStore WHERE email = %s",
-            (email,)
-        )
-        stored_data = cursor.fetchone()
-
+        stored_data = otp_storage.get(email)
         if not stored_data:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='OTP expired or not found.')
-
+        if not stored_data.get('verified'):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='OTP not verified.')
+        if datetime.datetime.now() > stored_data['expires_at']:
+            del otp_storage[email]
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='OTP expired.')
         if stored_data['otp'] != otp:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Invalid OTP.')
-        
-        if datetime.datetime.now() > stored_data['expires_at']:
-            # Delete expired OTP from DB here
-            cursor.execute("DELETE FROM OtpStore WHERE email = %s", (email,))
-            db_conn.commit()
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='OTP expired.')
 
-        # If OTP is valid and not expired, proceed with password reset
+        db_conn = get_db_connection()
+        cursor = db_conn.cursor()
         hashed_password = pwd_context.hash(new_password)
-        
-        # Update user's password in HASH table
-        update_hash_sql = 'UPDATE HASH SET hash_password = %s WHERE email = %s'
-        cursor.execute(update_hash_sql, (hashed_password, email))
-
-        # Delete the OTP from the database after successful use
-        delete_otp_sql = "DELETE FROM OtpStore WHERE email = %s"
-        cursor.execute(delete_otp_sql, (email,))
-        
+        cursor.execute('UPDATE HASH SET hash_password = %s WHERE email = %s', (hashed_password, email))
         db_conn.commit()
-
-        logging.info(f"Password reset for {email} and OTP deleted from DB.")
+        del otp_storage[email]
         return JSONResponse(content={"success": True, "message": "Password updated successfully"})
 
     except HTTPException as e:

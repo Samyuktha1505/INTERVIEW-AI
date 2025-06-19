@@ -15,7 +15,7 @@ import EditProfile from "./pages/EditProfile";
 import NotFound from "./pages/NotFound";
 import ProtectedRoute from "./components/ProtectedRoute";
 import LiveInterviewSession from "./pages/LiveInterviewSession"; 
-import ForgotPassword from "@/pages/Forgotpassword";
+import ForgotPassword from "@/pages/ForgotPassword";
 
 
 const queryClient = new QueryClient();
