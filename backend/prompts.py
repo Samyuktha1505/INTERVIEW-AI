@@ -64,9 +64,6 @@ def llm1_prompt(
             ```json
             {{
                 "Extracted_fields": {{
-                    "full_name": "Jane Doe",
-                    "email_address": "jane.doe@example.com",
-                    "mobile_number": "987-654-3210",
                     "graduation_college": "State University",
                     "education_degree": "M.Sc. Computer Science",
                     "certifications": "AWS Certified Solutions Architect, Certified ScrumMaster",

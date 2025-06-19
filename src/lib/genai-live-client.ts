@@ -161,11 +161,13 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
     this.emit("log", logEntry);
   }
 
-  async connect(model: string, config: LiveConnectConfig): Promise<boolean> {
+  // --- MODIFIED: Added sessionId parameter ---
+  async connect(model: string, config: LiveConnectConfig, sessionId: string): Promise<boolean> {
     // Initialize transcription session when connecting
-    SessionTranscription.initializeSession();
-    
-    if (!this.isAutoReconnecting) { 
+    // --- MODIFIED: Pass sessionId here ---
+    SessionTranscription.initializeSession(sessionId);
+
+    if (!this.isAutoReconnecting) {
       if (this.autoReconnectTimerId) {
         clearTimeout(this.autoReconnectTimerId);
         this.autoReconnectTimerId = null;
@@ -181,33 +183,29 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
 
     console.log(`[GenAILiveClient] Connect: Initiating connection. Model: ${model}. Current status: ${this._status}. Is auto-reconnecting cycle active: ${this.isAutoReconnecting}`);
     this._status = "connecting";
-    this.config = { ...config }; 
-    this._model = model;   
+    this.config = { ...config };
+    this._model = model;
 
     const previousSessionHandle = await this.loadPreviousSessionHandle(); // This can be string | null
 
-    // **MODIFIED PART**
     // Always create the sessionResumption configuration object.
-    // If previousSessionHandle is null (on first connect), 'handle' will be undefined.
-    // The presence of the 'sessionResumption' object itself signals intent to the server.
-    const sessionResumptionConfig: { handle?: string } = { // Explicitly type for clarity
-        handle: previousSessionHandle || undefined, 
+    const sessionResumptionConfig: { handle?: string } = {
+        handle: previousSessionHandle || undefined,
     };
 
     const effectiveConfig: LiveConnectConfig = {
       ...config, // User-provided base config
       responseModalities: config.responseModalities || [Modality.TEXT],
       // Now, sessionResumption field is always present in the config sent to the server
-      sessionResumption: sessionResumptionConfig, 
+      sessionResumption: sessionResumptionConfig,
     };
 
     if (previousSessionHandle) {
       console.log(`[GenAILiveClient] Connect: Attempting to resume session with existing handle: ${previousSessionHandle}`);
     } else {
-      // Log updated to reflect the new approach
       console.log("[GenAILiveClient] Connect: Starting a new session, configured for session resumption. Expecting server to send a handle if supported.");
     }
-    
+
     console.log(`[GenAILiveClient] Connect: Effective config being passed to SDK connect method:`, JSON.parse(JSON.stringify(effectiveConfig)));
 
     const callbacks: LiveCallbacks = {
@@ -219,14 +217,14 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
 
     try {
       this._session = await this.client.live.connect({
-        model: this._model, 
+        model: this._model,
         config: effectiveConfig, // Pass the config that now always includes sessionResumption
         callbacks,
       });
       console.log("[GenAILiveClient] Connect: SDK connect method call successfully initiated.");
     } catch (e: any) {
       console.error("[GenAILiveClient] Connect: Error during SDK connect method call:", e.message || e, e);
-      this._status = "disconnected"; 
+      this._status = "disconnected";
       if (previousSessionHandle) {
         console.log(`[GenAILiveClient] Connect: Clearing potentially invalid session handle ${previousSessionHandle} from localStorage after connection error.`);
         localStorage.removeItem(this.sessionHandleStorageKey);
@@ -242,7 +240,7 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
   public disconnect() {
     // End transcription session when disconnecting
     SessionTranscription.endSession();
-    
+
     console.log("[GenAILiveClient] Disconnect: User initiated.");
     if (this.autoReconnectTimerId) {
         clearTimeout(this.autoReconnectTimerId);
@@ -257,8 +255,8 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
       return false;
     }
     console.log("[GenAILiveClient] Disconnect: Closing active session.");
-    this.session?.close(); 
-    this._session = null; 
+    this.session?.close();
+    this._session = null;
     this.log("client.close", `Disconnected (user initiated)`);
     return true;
   }
@@ -273,7 +271,7 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
     if (this.isAutoReconnecting) {
         console.log("[GenAILiveClient] OnOpen: Auto-reconnection attempt was successful.");
     }
-    
+
     if (this.autoReconnectTimerId) {
         clearTimeout(this.autoReconnectTimerId);
         this.autoReconnectTimerId = null;
@@ -295,33 +293,33 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
       `Connection closed. Code: ${e.code}, Reason: ${e.reason ? e.reason : "No reason provided"}`
     );
     this.emit("close", e);
-    
+
     const wasConnectedOrConnecting = (this._status === "connected" || this._status === "connecting");
     this._status = "disconnected";
 
-    const normalClosureCodes = [1000, 1005]; 
-    
+    const normalClosureCodes = [1000, 1005];
+
     if (wasConnectedOrConnecting && !normalClosureCodes.includes(e.code)) {
         if (this.autoReconnectAttempts < this.maxAutoReconnectAttempts) {
-            if (!this.isAutoReconnecting) { 
+            if (!this.isAutoReconnecting) {
                 console.log(`[GenAILiveClient] OnClose: Unexpected disconnect. Initializing auto-reconnect cycle.`);
-                this.isAutoReconnecting = true; 
-            } else { 
+                this.isAutoReconnecting = true;
+            } else {
                  console.log(`[GenAILiveClient] OnClose: Auto-reconnect attempt failed. Will schedule next if attempts remain.`);
             }
             this.attemptReconnect();
-        } else { 
+        } else {
             console.error(`[GenAILiveClient] OnClose: Max auto-reconnect attempts (${this.maxAutoReconnectAttempts}) reached for this cycle. Stopping auto-reconnection.`);
             this.isAutoReconnecting = false;
-            this.autoReconnectAttempts = 0; 
+            this.autoReconnectAttempts = 0;
         }
-    } else { 
+    } else {
         if (normalClosureCodes.includes(e.code)) {
             console.log(`[GenAILiveClient] OnClose: Normal closure (code ${e.code}). Not auto-reconnecting.`);
         } else if (!wasConnectedOrConnecting) {
             console.log(`[GenAILiveClient] OnClose: Not auto-reconnecting as connection was not previously established or was already disconnecting.`);
         }
-        if (this.isAutoReconnecting) { 
+        if (this.isAutoReconnecting) {
             this.isAutoReconnecting = false;
             this.autoReconnectAttempts = 0;
         }
@@ -337,25 +335,25 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
         console.log("[GenAILiveClient] AttemptReconnect: Called but auto-reconnect cycle is not active. Aborting.");
         return;
     }
-    
+
     if (this.autoReconnectAttempts >= this.maxAutoReconnectAttempts) {
         console.error(`[GenAILiveClient] AttemptReconnect: Max auto-reconnect attempts (${this.maxAutoReconnectAttempts}) reached. Stopping cycle.`);
-        this.isAutoReconnecting = false; 
+        this.isAutoReconnecting = false;
         this.autoReconnectAttempts = 0;
         if (this.autoReconnectTimerId) clearTimeout(this.autoReconnectTimerId);
         this.autoReconnectTimerId = null;
         return;
     }
 
-    this.autoReconnectAttempts++; 
-    const delay = this.initialReconnectDelayMs * Math.pow(2, this.autoReconnectAttempts - 1); 
-    
+    this.autoReconnectAttempts++;
+    const delay = this.initialReconnectDelayMs * Math.pow(2, this.autoReconnectAttempts - 1);
+
     console.log(`[GenAILiveClient] AttemptReconnect: Scheduling attempt #${this.autoReconnectAttempts} of ${this.maxAutoReconnectAttempts} in ${delay / 1000}s.`);
 
-    if (this.autoReconnectTimerId) clearTimeout(this.autoReconnectTimerId); 
+    if (this.autoReconnectTimerId) clearTimeout(this.autoReconnectTimerId);
 
     this.autoReconnectTimerId = setTimeout(async () => {
-        if (this._status === "disconnected" && this.isAutoReconnecting) { 
+        if (this._status === "disconnected" && this.isAutoReconnecting) {
             if (!this._model || !this.config) {
                 console.error("[GenAILiveClient] AttemptReconnect: Critical error - model or config missing for retry. Stopping cycle.");
                 this.isAutoReconnecting = false;
@@ -363,7 +361,7 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
                 return;
             }
             console.log(`[GenAILiveClient] AttemptReconnect: Executing auto-reconnect attempt #${this.autoReconnectAttempts} to model ${this._model}...`);
-            await this.connect(this._model, this.config); 
+            await this.connect(this._model, this.config, "YOUR_SESSION_ID_HERE"); // TODO: You need to pass the actual sessionId here
         } else if (!this.isAutoReconnecting) {
             console.log(`[GenAILiveClient] AttemptReconnect: Auto-reconnect cycle was cancelled before attempt #${this.autoReconnectAttempts} execution.`);
         } else {
@@ -379,25 +377,25 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
   protected async onmessage(message: LiveServerMessage) {
     console.log("[GenAILiveClient] RAW SERVER MESSAGE:", JSON.parse(JSON.stringify(message)));
 
-    // Handle inputTranscription event (user's speech)
+    // Handle inputTranscription event (user's speech from ASR)
     if (message.serverContent?.inputTranscription?.text) {
       const transcribedText = message.serverContent.inputTranscription.text;
-      SessionTranscription.handleInputTranscription(transcribedText);
+      SessionTranscription.handleInputTranscription(transcribedText); // CORRECT: Use the new handler
       useChatStore.getState().addMessage("user", transcribedText);
       return;
     }
 
-    // Handle outputTranscription event (assistant's speech)
+    // Handle outputTranscription event (assistant's speech from ASR/LLM)
     if (message.serverContent?.outputTranscription?.text) {
       const transcribedText = message.serverContent.outputTranscription.text;
-      SessionTranscription.handleOutputTranscription(transcribedText);
+      SessionTranscription.handleOutputTranscription(transcribedText); // CORRECT: Use the new handler
       useChatStore.getState().addMessage("agent", transcribedText);
       return;
     }
 
     if (message.sessionResumptionUpdate) {
       this.log("server.sessionResumptionUpdate", JSON.stringify(message.sessionResumptionUpdate));
-      if (message.sessionResumptionUpdate.newHandle) { 
+      if (message.sessionResumptionUpdate.newHandle) {
         const newHandle = message.sessionResumptionUpdate.newHandle;
         console.log(`[GenAILiveClient] OnMessage: Received sessionResumptionUpdate with new/updated handle from server: ${newHandle} (Resumable: ${message.sessionResumptionUpdate.resumable})`);
         await this.storeNewSessionHandle(newHandle);
@@ -423,8 +421,8 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
     }
 
     if (message.serverContent) {
-      const { serverContent } = message; 
-      
+      const { serverContent } = message;
+
       if ("interrupted" in serverContent) {
         this.log("server.content", "interrupted");
         this.emit("interrupted");
@@ -437,8 +435,11 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
       if ("modelTurn" in serverContent && serverContent.modelTurn) {
         const modelTurn: Content = serverContent.modelTurn;
 
-        // Store assistant's response in transcription
-        SessionTranscription.addTranscription('assistant', SessionTranscription.parseContentToText(modelTurn));
+        // --- REMOVED ---
+        // SessionTranscription.addTranscription('assistant', SessionTranscription.parseContentToText(modelTurn));
+        // This was redundant as outputTranscription should be handled by handleOutputTranscription.
+        // If your server *only* sends modelTurn and no outputTranscription for spoken output,
+        // you might need a different strategy to get this into SessionTranscription (e.g., a "final turn" method).
 
         let currentProcessingParts: Part[] = modelTurn.parts || [];
 
@@ -455,25 +456,25 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
             this.log(`server.audio`, `buffer (${data.byteLength})`);
           }
         });
-        
-        if (!otherParts.length && audioParts.length > 0) { 
-          return; 
+
+        if (!otherParts.length && audioParts.length > 0) {
+          return;
         }
-        currentProcessingParts = otherParts; 
+        currentProcessingParts = otherParts;
 
         if (currentProcessingParts.length > 0) {
-            const contentToEmit: { modelTurn: Content } = { 
-                modelTurn: { parts: currentProcessingParts, role: modelTurn.role } 
+            const contentToEmit: { modelTurn: Content } = {
+                modelTurn: { parts: currentProcessingParts, role: modelTurn.role }
             };
             this.emit("content", contentToEmit);
             this.log(`server.content`, JSON.stringify({ serverContent: contentToEmit }) );
-        } else if (!("turnComplete" in serverContent) && !audioParts.length) { 
+        } else if (!("turnComplete" in serverContent) && !audioParts.length) {
             this.log(`server.content`, `Received modelTurn which resulted in no further parts to emit after processing (original modelTurn: ${JSON.stringify(modelTurn)})`);
         }
-      } 
-      return;  
-    } 
-    
+      }
+      return;
+    }
+
     const wasMessageHandledBySpecificLogic = message.sessionResumptionUpdate || message.setupComplete || message.toolCall || message.toolCallCancellation || message.serverContent;
     if (!wasMessageHandledBySpecificLogic) {
         console.warn("[GenAILiveClient] OnMessage: Received message structure not explicitly handled by specific if-blocks above:", JSON.parse(JSON.stringify(message)));
@@ -517,11 +518,15 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
     const clientContentToLog = { turns: Array.isArray(parts) ? parts : [parts], turnComplete };
     this.log(`client.send`, clientContentToLog);
 
-    // Store user's message in transcription
-    const userContent: Content = {
-      role: 'user',
-      parts: Array.isArray(parts) ? parts : [parts]
-    };
-    SessionTranscription.addTranscription('user', SessionTranscription.parseContentToText(userContent));
+    // --- REMOVED ---
+    // This was redundant as inputTranscription from the server should drive the transcription saving for user's speech.
+    // If you are sending *text* directly from UI without ASR, and want to capture it in transcription,
+    // you would need a new dedicated method in SessionTranscription like `addFinalUserMessageText(text: string)`.
+    // For now, assuming real-time transcription from server `inputTranscription` is the source.
+    // const userContent: Content = {
+    //   role: 'user',
+    //   parts: Array.isArray(parts) ? parts : [parts]
+    // };
+    // SessionTranscription.addTranscription('user', SessionTranscription.parseContentToText(userContent));
   }
 }

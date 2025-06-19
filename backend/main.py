@@ -31,8 +31,6 @@ from functions import extract_text_from_pdf, process_and_extract_json_data, extr
 # This line is changed to import the instance directly:
 from s3_client import s3_client as s3_client_instance 
 
-otp_storage = {}
-
 load_dotenv()
 
 # --- Logging Configuration ---
@@ -76,7 +74,7 @@ app = FastAPI(title="Interview AI API", version="1.0")
 # For development, allowing all origins is common but tighten it for production.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:8080", "http://127.0.0.1:3000", "http://127.0.0.1:8080"], # Added common frontend dev ports
+    allow_origins=[ "http://localhost:8080"], # Added common frontend dev ports
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -216,11 +214,14 @@ async def login(payload: LoginPayload, request: Request):
 
 
 @app.post("/api/signup")
-async def signup(payload: SignupPayload):
+async def signup(payload: SignupPayload, request: Request): # ADDED: request: Request
     email = payload.email
     mobile = payload.mobile
     password = payload.password
     country_code = payload.countryCode
+    ip_address = request.client.host if request.client else "unknown" # ADDED: Get IP address
+    location = "Kurnool, India" # Hardcoded for now (or use a geo-IP for signup as well)
+
 
     db_conn = None
     cursor = None
@@ -245,7 +246,16 @@ async def signup(payload: SignupPayload):
             INSERT INTO HASH (user_id, email, hash_password)
             VALUES (%s, %s, %s)
         """, (user_id, email, hashed_password))
-        db_conn.commit()
+        
+        # ADDED: Log signup attempt in LoginTrace
+        sql_trace = """
+            INSERT INTO LoginTrace (user_id, login_time, ip_address, login_status, location)
+            VALUES (%s, %s, %s, %s, %s)
+        """
+        cursor.execute(sql_trace, (user_id, datetime.datetime.utcnow(), ip_address,
+                                   "SIGNUP_SUCCESS", location)) # Use "SIGNUP_SUCCESS" status
+
+        db_conn.commit() # Commit all changes (User, HASH, LoginTrace)
 
         return JSONResponse(content={"success": True, "message": "Signup successful", "user_id": user_id})
 
@@ -449,19 +459,24 @@ async def forgot_password(payload: ForgotPasswordPayload):
         user_exists = cursor.fetchone()
 
         if not user_exists:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, 
-                              detail='Email doesn\'t exist, please signup to continue.')
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Email doesn\'t exist, please signup to continue.')
 
         otp = generate_otp()
         expires_at = datetime.datetime.now() + datetime.timedelta(minutes=15)
         
-        # Store OTP in memory
-        otp_storage[email] = {
-            'otp': otp,
-            'expires_at': expires_at
-        }
-        
-        logging.info(f"Generated OTP for {email} and stored in memory: {otp}")
+        # --- Store OTP in the database ---
+        # Using ON DUPLICATE KEY UPDATE to handle existing OTPs
+        sql_insert_otp = """
+            INSERT INTO OtpStore (email, otp, expires_at)
+            VALUES (%s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                otp = VALUES(otp),
+                expires_at = VALUES(expires_at),
+                created_at = CURRENT_TIMESTAMP;
+        """
+        cursor.execute(sql_insert_otp, (email, otp, expires_at))
+        db_conn.commit()
+        logging.info(f"Generated OTP for {email} and stored in DB: {otp}")
 
         msg = MIMEText(f"Your OTP for password reset is: {otp}\nThis OTP will expire in 15 minutes.")
         msg['Subject'] = 'Password Reset OTP'
@@ -476,49 +491,66 @@ async def forgot_password(payload: ForgotPasswordPayload):
         return JSONResponse(content={"success": True, "message": "OTP sent successfully"})
 
     except HTTPException as e:
+        if db_conn: db_conn.rollback()
         raise e
     except Exception as e:
         logging.error(f"Error in forgot password for {email}: {e}", exc_info=True)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
-                          detail="Internal server error.")
+        if db_conn: db_conn.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error.")
     finally:
         if cursor: cursor.close()
         if db_conn and db_conn.is_connected(): db_conn.close()
+
 
 @app.post('/api/verify-otp')
 async def verify_otp(payload: VerifyOtpPayload):
     email = payload.email
     otp = payload.otp
+    db_conn = None
+    cursor = None
 
     try:
-        # Retrieve OTP from memory storage
-        stored_data = otp_storage.get(email)
-        
+        db_conn = get_db_connection()
+        cursor = db_conn.cursor(dictionary=True)
+
+        # --- Retrieve OTP from the database ---
+        cursor.execute(
+            "SELECT otp, expires_at FROM OtpStore WHERE email = %s",
+            (email,)
+        )
+        stored_data = cursor.fetchone()
+
         if not stored_data:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, 
-                              detail='OTP expired or not found.')
+            # Using 400 for 'OTP not found' is fine, or 401 if you consider it an authorization failure
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='OTP expired or not found.')
 
         if datetime.datetime.now() > stored_data['expires_at']:
-            # Remove expired OTP from memory
-            del otp_storage[email]
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, 
-                              detail='OTP expired.')
+            # Delete expired OTP from DB
+            cursor.execute("DELETE FROM OtpStore WHERE email = %s", (email,))
+            db_conn.commit()
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='OTP expired.')
 
         if stored_data['otp'] != otp:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, 
-                              detail='Invalid OTP.')
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Invalid OTP.')
 
-        # OTP is valid, mark it as verified by adding a flag
-        otp_storage[email]['verified'] = True
+        # OTP is valid, delete it now to prevent reuse
+        cursor.execute("DELETE FROM OtpStore WHERE email = %s", (email,))
+        db_conn.commit()
         
         return JSONResponse(content={"success": True, "message": "OTP verified successfully"})
 
     except HTTPException as e:
+        if db_conn: db_conn.rollback()
         raise e
     except Exception as e:
         logging.error(f"Error verifying OTP for {email}: {e}", exc_info=True)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
-                          detail="Internal server error.")
+        if db_conn: db_conn.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error.")
+    finally:
+        if cursor: cursor.close()
+        if db_conn and db_conn.is_connected(): db_conn.close()
+
+
 @app.post('/api/reset-password')
 async def reset_password(payload: ResetPasswordPayload):
     email = payload.email
@@ -528,43 +560,42 @@ async def reset_password(payload: ResetPasswordPayload):
     db_conn = None
     cursor = None
     try:
-        # Check OTP from memory storage first
-        stored_data = otp_storage.get(email)
-        
-        if not stored_data:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, 
-                              detail='OTP expired or not found.')
-        
-        if not stored_data.get('verified'):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, 
-                              detail='OTP not verified.')
+        db_conn = get_db_connection()
+        cursor = db_conn.cursor(dictionary=True) # Use dictionary=True for easier access
 
-        if datetime.datetime.now() > stored_data['expires_at']:
-            # Remove expired OTP from memory
-            del otp_storage[email]
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, 
-                              detail='OTP expired.')
+        # --- Retrieve OTP from the database for verification ---
+        cursor.execute(
+            "SELECT otp, expires_at FROM OtpStore WHERE email = %s",
+            (email,)
+        )
+        stored_data = cursor.fetchone()
+
+        if not stored_data:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='OTP expired or not found.')
 
         if stored_data['otp'] != otp:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, 
-                              detail='Invalid OTP.')
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Invalid OTP.')
+        
+        if datetime.datetime.now() > stored_data['expires_at']:
+            # Delete expired OTP from DB here
+            cursor.execute("DELETE FROM OtpStore WHERE email = %s", (email,))
+            db_conn.commit()
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='OTP expired.')
 
-        # If we get here, OTP is valid and verified
-        db_conn = get_db_connection()
-        cursor = db_conn.cursor(dictionary=True)
-
+        # If OTP is valid and not expired, proceed with password reset
         hashed_password = pwd_context.hash(new_password)
         
         # Update user's password in HASH table
         update_hash_sql = 'UPDATE HASH SET hash_password = %s WHERE email = %s'
         cursor.execute(update_hash_sql, (hashed_password, email))
+
+        # Delete the OTP from the database after successful use
+        delete_otp_sql = "DELETE FROM OtpStore WHERE email = %s"
+        cursor.execute(delete_otp_sql, (email,))
         
         db_conn.commit()
 
-        # Remove the OTP from memory after successful password reset
-        del otp_storage[email]
-
-        logging.info(f"Password reset for {email}")
+        logging.info(f"Password reset for {email} and OTP deleted from DB.")
         return JSONResponse(content={"success": True, "message": "Password updated successfully"})
 
     except HTTPException as e:
@@ -573,11 +604,12 @@ async def reset_password(payload: ResetPasswordPayload):
     except Exception as e:
         logging.error(f"Error resetting password for {email}: {e}", exc_info=True)
         if db_conn: db_conn.rollback()
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
-                          detail="Internal server error.")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error.")
     finally:
         if cursor: cursor.close()
         if db_conn and db_conn.is_connected(): db_conn.close()
+
+
 
 @app.post("/v1/analyze_resume/")
 async def analyze_resume(
@@ -593,76 +625,242 @@ async def analyze_resume(
 ):
     if not resume or not resume.content_type == "application/pdf":
         raise HTTPException(status_code=400, detail="A PDF file is required.")
-    
-    db_conn = None
+
+    db_conn = None # Initialize db_conn for outer try-finally
     tmp_file_path = None
-    cursor = None
     try:
-        print(f"[{datetime.datetime.now()}] Received request for user: {user_email}")
+        logging.info(f"[{datetime.datetime.now()}] Received /analyze_resume/ request for user: {user_email}")
+
+        # 1. Save uploaded resume to a temporary file and extract text
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
             content = await resume.read()
-            if len(content) > 5 * 1024 * 1024:
+            if len(content) > 5 * 1024 * 1024: # 5 MB limit
                 raise HTTPException(status_code=413, detail="File size exceeds 5MB.")
             tmp_file.write(content)
             tmp_file_path = tmp_file.name
-        
+
         resume_text = extract_text_from_pdf(tmp_file_path)
         if not resume_text.strip():
             raise HTTPException(status_code=400, detail="Could not extract text from PDF.")
-        
+
+        # --- Get user_id for database operations ---
+        user_id_for_db = None
+        # Using temp_db_conn and temp_cursor for this initial user_id fetch
+        # to ensure the main transaction db_conn and cursor are clean.
+        temp_db_conn = None
+        temp_cursor = None
+        try:
+            temp_db_conn = get_db_connection()
+            temp_cursor = temp_db_conn.cursor(dictionary=True)
+            temp_cursor.execute("SELECT user_id FROM User WHERE email = %s", (user_email,))
+            user_data = temp_cursor.fetchone()
+
+            if not user_data or not user_data.get('user_id'):
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found for resume processing.")
+
+            user_id_for_db = user_data['user_id']
+        finally:
+            if temp_cursor: temp_cursor.close()
+            if temp_db_conn and temp_db_conn.is_connected(): temp_db_conn.close()
+
+        # --- Get main DB connection for subsequent operations ---
+        db_conn = get_db_connection()
+        cursor = db_conn.cursor()
+
+        # --- Fetch the latest log_id for the user (for Interview table) ---
+        log_id_for_interview = None # Renamed variable for clarity
+        try:
+            cursor.execute("""
+                SELECT log_id FROM LoginTrace
+                WHERE user_id = %s AND login_status = 'SUCCESS'
+                ORDER BY login_time DESC
+                LIMIT 1
+            """, (user_id_for_db,))
+            log_data = cursor.fetchone() # This line correctly consumes the single row result
+            if log_data:
+                log_id_for_interview = log_data[0]
+            else:
+                logging.warning(f"No successful log_id found for user_id: {user_id_for_db}. Interview record will be stored without log_id.")
+        except Exception as e:
+            logging.error(f"Error fetching log_id for user {user_id_for_db}: {e}", exc_info=True)
+            # Decide if you want to raise an HTTPException here or proceed with log_id_for_interview = None
+            # For now, we'll proceed with None if an error occurs.
+
+
+        # --- Store Interview Setup Data into 'Interview' table (NOW WITH log_id) ---
+        Interview_data_to_store = {
+            "target_role": targetRole, # Use form data directly
+            "target_company": targetCompany, # Use form data directly
+            "years_of_experience": yearsOfExperience, # Use form data directly
+            "current_designation": currentDesignation, # Use form data directly
+            "interview_type": interviewType, # Use form data directly
+            "session_interval": sessionInterval, # Use form data directly
+            "log_id": log_id_for_interview, # ADDED: log_id for Interview table
+            "created_at": datetime.datetime.utcnow()
+        }
+
+        insert_interview_sql = """
+            INSERT INTO Interview (
+                 current_designation, target_role, target_company, years_of_experience,
+                 interview_type, session_interval, log_id, created_at
+            ) VALUES ( %s, %s, %s, %s, %s, %s, %s, %s)
+        """
+        cursor.execute(insert_interview_sql, (
+            Interview_data_to_store["current_designation"],
+            Interview_data_to_store["target_role"],
+            Interview_data_to_store["target_company"],
+            Interview_data_to_store["years_of_experience"],
+            Interview_data_to_store["interview_type"],
+            Interview_data_to_store["session_interval"],
+            Interview_data_to_store["log_id"], # ADDED: log_id
+            Interview_data_to_store["created_at"]
+        ))
+        db_conn.commit()
+        # Retrieve the auto-generated interview_id
+        interview_id_for_session = cursor.lastrowid
+        logging.info(f"New Interview record created with interview_id: {interview_id_for_session} for user_id: {user_id_for_db} and log_id: {log_id_for_interview}")
+
+
+        # --- 2. Call LLM to extract structured fields and generate questionnaire ---
+        # The llm1_prompt is designed to return both, so one LLM call is sufficient here.
+        # This reduces latency and token usage compared to two separate LLM calls.
         prompt = llm1_prompt(
             resume_text=resume_text, target_role=targetRole, target_company=targetCompany,
             years_of_experience=yearsOfExperience, current_designation=currentDesignation,
             session_interval=sessionInterval or "N/A", interview_type=interviewType
         )
-        
+
         model = genai.GenerativeModel(model_id)
-        response = model.generate_content(prompt)
-        
-        extracted_fields_str, questionnaire_str = process_and_extract_json_data(response.text)
-        
-        full_analysis_data = {
-            "Extracted_fields": json.loads(extracted_fields_str),
-            "Questionnaire_prompt": json.loads(questionnaire_str)
+        llm_response = model.generate_content(prompt)
+        llm_response_text = llm_response.text
+
+        process_and_extract_json_data_result = process_and_extract_json_data(llm_response_text)
+        if len(process_and_extract_json_data_result) != 2:
+            raise ValueError("process_and_extract_json_data did not return two JSON strings.")
+
+        extracted_fields_json_str, questionnaire_json_str = process_and_extract_json_data_result
+
+        extracted_fields = json.loads(extracted_fields_json_str)
+        questionnaire_prompt = json.loads(questionnaire_json_str)
+
+        # --- 3. Store Extracted Fields into 'Resume' table ---
+        # Map LLM extracted fields and frontend fields to Resume table columns
+        # Prioritize LLM's extraction where available, fallback to frontend form data or None
+        resume_data_to_store = {
+            "user_id": user_id_for_db,
+            "email_address":  user_email, # LLM's email or form email
+            "mobile_number": extracted_fields.get("mobile_number"), # LLM's mobile_number
+            "graduation_college": extracted_fields.get("graduation_college"), # LLM's graduation_college
+            "skills": extracted_fields.get("skills"),
+            "certifications": extracted_fields.get("certifications"),
+            "projects": extracted_fields.get("projects"),
+            "previous_companies": extracted_fields.get("previous_companies"),
+            "education_degree": extracted_fields.get("education_degree"), # LLM provides 'education_degree'
+            "current_role": extracted_fields.get("current_role", currentDesignation), # LLM's current_role or form data
+            "work_experience": extracted_fields.get("work_experience", yearsOfExperience), # LLM's or form data
+            "current_company" : extracted_fields.get("current_company"),
+            "current_location" : extracted_fields.get("current_location")
         }
-        
-        data_to_store_in_db = json.loads(questionnaire_str) # Parse to ensure it's a valid JSON object/array
-                                                          # Then, dump it back to string for DB storage
-        
-        db_conn = get_db_connection()
-        cursor = db_conn.cursor()
-        
+
+        insert_resume_sql = """
+            INSERT INTO Resume (
+                user_id, email_address, mobile_number, graduation_college, education_degree, certifications, skills,
+                projects, current_company, previous_companies, current_location,
+                current_role, work_experience
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                email_address = VALUES(email_address),
+                mobile_number = VALUES(mobile_number),
+                graduation_college = VALUES(graduation_college),
+                education_degree = VALUES(education_degree),
+                certifications = VALUES(certifications),
+                skills = VALUES(skills),
+                projects = VALUES(projects),
+                current_company = VALUES(current_company),
+                previous_companies = VALUES(previous_companies),
+                current_location = VALUES(current_location),
+                current_role = VALUES(current_role),
+                work_experience = VALUES(work_experience);
+        """
+        cursor.execute(insert_resume_sql, (
+            resume_data_to_store["user_id"],
+            resume_data_to_store["email_address"],
+            resume_data_to_store["mobile_number"],
+            resume_data_to_store["graduation_college"],
+            resume_data_to_store["education_degree"],
+            resume_data_to_store["certifications"],
+            resume_data_to_store["skills"],
+            resume_data_to_store["projects"],
+            resume_data_to_store["current_company"],
+            resume_data_to_store["previous_companies"],
+            resume_data_to_store["current_location"],
+            resume_data_to_store["current_role"],
+            resume_data_to_store["work_experience"]
+        ))
+        db_conn.commit()
+        logging.info(f"Structured resume data stored/updated in Resume table for user_id: {user_id_for_db}")
+
+
+        # --- Retrieve resume_id after insert/update ---
+        # FIX: Added ORDER BY and LIMIT 1 to ensure only one row is fetched
+        # and the cursor is fully consumed.
+        cursor.execute("""
+            SELECT resume_id FROM Resume
+            WHERE user_id = %s
+            ORDER BY resume_id DESC -- Assuming higher resume_id implies more recent
+            LIMIT 1
+        """, (user_id_for_db,))
+        resume_id_for_session_data = cursor.fetchone() # Fetch the result into a variable
+
+        if not resume_id_for_session_data:
+            raise HTTPException(status_code=500, detail="Failed to retrieve resume_id after saving resume data. No resume found for user.")
+        resume_id_for_session = resume_id_for_session_data[0] # Extract the actual ID from the fetched data
+
+
+        # --- 4. Store questionnaire_prompt into 'InterviewSession' table ---
         sql_query = """
-            INSERT INTO InterviewSession (session_id, prompt_example_questions, session_created_at)
-            VALUES (%s, %s, %s)
-            ON DUPLICATE KEY UPDATE 
+            INSERT INTO InterviewSession (session_id, resume_id, interview_id, prompt_example_questions, session_created_at)
+            VALUES (%s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                resume_id = VALUES(resume_id),
+                interview_id = VALUES(interview_id),
                 prompt_example_questions = VALUES(prompt_example_questions);
         """
-        cursor.execute(sql_query, (session_id, json.dumps(full_analysis_data), datetime.datetime.utcnow()))
+        # Store questionnaire_prompt directly as a JSON string in the DB.
+        cursor.execute(sql_query, (
+            session_id,
+            resume_id_for_session,
+            interview_id_for_session,
+            json.dumps(questionnaire_prompt),
+            datetime.datetime.utcnow()
+        ))
         db_conn.commit()
-        
+
+        # Verification step
         cursor.execute("SELECT session_id FROM InterviewSession WHERE session_id = %s", (session_id,))
         if cursor.fetchone() is None:
             raise HTTPException(status_code=500, detail="Failed to save and verify interview session.")
-        
-        logging.info(f"VERIFICATION SUCCESS: Successfully saved for session_id: {session_id}")
+
+        logging.info(f"VERIFICATION SUCCESS: Successfully saved interview session analysis for session_id: {session_id}")
         return JSONResponse(content={
-            "Questionnaire_prompt": json.loads(questionnaire_str)
+            "Questionnaire_prompt": questionnaire_prompt # Return just the questionnaire to the frontend
         })
-        
+
+    except HTTPException as e:
+        logging.error(f"HTTPException in /analyze_resume/: {e.detail}", exc_info=True)
+        if db_conn: db_conn.rollback()
+        raise e
     except Exception as e:
-        logging.error(f"Error in /analyze_resume/: {e}", exc_info=True)
-        if db_conn:
-            db_conn.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.error(f"Unhandled error in /analyze_resume/: {e}", exc_info=True)
+        if db_conn: db_conn.rollback()
+        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
     finally:
-        if cursor:
-            cursor.close()
-        if db_conn and db_conn.is_connected():
-            db_conn.close()
+        if cursor: cursor.close()
+        if db_conn and db_conn.is_connected(): db_conn.close()
         if tmp_file_path and os.path.exists(tmp_file_path):
             os.remove(tmp_file_path)
-
+            
+            
 @app.get("/v1/analysis/{session_id}")
 async def get_analysis(session_id: str):
     db_conn = None
@@ -673,7 +871,11 @@ async def get_analysis(session_id: str):
         cursor.execute("SELECT prompt_example_questions FROM InterviewSession WHERE session_id = %s", (session_id,))
         result = cursor.fetchone()
         if result and result.get('prompt_example_questions'):
-            return JSONResponse(content=json.loads(result['prompt_example_questions']))
+            # Load the questionnaire data from the DB column
+            questionnaire_data = json.loads(result['prompt_example_questions'])
+
+            # *** FIX IS HERE: Wrap the questionnaire_data in a dictionary with the expected key ***
+            return JSONResponse(content={"Questionnaire_prompt": questionnaire_data})
         else:
             raise HTTPException(status_code=404, detail="Analysis not found.")
     finally:
