@@ -40,7 +40,7 @@ const EditProfile = () => {
       if (user?.email) {
         setIsLoading(true);
         try {
-          const response = await fetch(`http://localhost:8000/api/user-profile?email=${user.email}`);
+          const response = await fetch(`http://localhost:8000/user-profile?email=${user.email}`);
           const data = await response.json();
 
           if (response.ok && data.success) {
@@ -185,14 +185,14 @@ const EditProfile = () => {
         form.append("resume", formData.resumeFile);
       }
 
-      const response = await fetch("http://localhost:8000/api/basic-info", {
+      const response = await fetch("http://localhost:8000/basic-info", {
         method: "POST",
         body: form,
       });
 
       const result = await response.json();
 
-      if (response.ok && result.success) {
+      if (response.ok) {
         updateProfile({
           ...user,
           firstName: formData.firstName,
@@ -232,7 +232,7 @@ const EditProfile = () => {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background to-secondary p-4">
         <Card className="w-full max-w-2xl text-center p-8">
-          <p className="text-lg">HANGON,UPDATING THE DETIALS</p>
+          <p className="text-lg">UPDATING THE DETIALS</p>
         </Card>
       </div>
     );

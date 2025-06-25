@@ -60,25 +60,31 @@ const Signup = () => {
     return true;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!validateForm()) return;
-    setIsLoading(true);
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
+  if (!validateForm()) return;
+  setIsLoading(true);
 
-    try {
-      const success = await signup(formData.email, formData.password, formData.mobile, formData.countryCode);
-      if (success) {
-        toast({ title: "Account created", description: "Please complete your profile" });
-      } else {
-        toast({ title: "Signup failed", description: "Email already exists or server error", variant: "destructive" });
-      }
-    } catch (error) {
-      console.error("Signup submission error:", error);
-      toast({ title: "Error", description: "Something went wrong during signup. Please try again.", variant: "destructive" });
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  try {
+    await signup(formData.email, formData.password, formData.mobile, formData.countryCode);
+
+    // ✅ Success assumed if no error thrown
+    toast({
+      title: "Account created",
+      description: "Please complete your profile",
+    });
+  } catch (error) {
+    console.error("Signup submission error:", error);
+    toast({
+      title: "Signup failed",
+      description: "Email already exists or server error",
+      variant: "destructive",
+    });
+  } finally {
+    setIsLoading(false);
+  }
+};
+
 
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));

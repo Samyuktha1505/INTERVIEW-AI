@@ -7,48 +7,53 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "../contexts/AuthContext"; // Adjust path as needed
-import { toast } from "@/hooks/use-toast"; // Adjust path as needed
+import { useAuth } from "../contexts/AuthContext";
+import { toast } from "@/hooks/use-toast";
 import { Upload, CalendarIcon } from "lucide-react";
-import { cn } from "@/lib/utils"; // Adjust path as needed
+import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { DayPicker } from 'react-day-picker';
-import 'react-day-picker/dist/style.css'; // Make sure this CSS is accessible
+import 'react-day-picker/dist/style.css';
+
+
+interface BasicInfoForm {
+  firstName: string;
+  lastName: string;
+  gender: string;
+  dateOfBirth?: Date;
+  collegeName: string;
+  yearsOfExperience: number;
+  resumeFile: File | null;
+}
 
 const BasicInfo = () => {
-  // State to hold all form data, including the resume file and country code
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<BasicInfoForm>({
     firstName: '',
     lastName: '',
     gender: '',
-    dateOfBirth: undefined as Date | undefined, // Date object for DayPicker
+    dateOfBirth: undefined,
     collegeName: '',
     yearsOfExperience: 0,
-    resumeFile: null as File | null // To store the selected File object
-    // countryCode: '+91' // Added countryCode with a default value (e.g., India)
+    resumeFile: null
   });
 
-  const [isLoading, setIsLoading] = useState(false); // Loading state for button
-  const { updateProfile, user } = useAuth(); // Auth context for user info and profile updates
-  const navigate = useNavigate(); // For navigation after profile completion
+  const [isLoading, setIsLoading] = useState(false);
+  const { updateProfile, user } = useAuth();
+  const navigate = useNavigate();
 
-  // Redirect if profile is already complete
   useEffect(() => {
     if (user?.isProfileComplete) {
       navigate('/dashboard');
     }
   }, [user, navigate]);
 
-  // Generic handler for text, select, and radio inputs
-  const handleInputChange = (field: string, value: any) => {
+  const handleInputChange = (field: keyof BasicInfoForm, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
-  // Handler for file input change
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]; // Get the first selected file
+    const file = e.target.files?.[0];
     if (file) {
-      // Basic client-side file type validation
       const allowedMimes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
       if (allowedMimes.includes(file.type)) {
         setFormData(prev => ({ ...prev, resumeFile: file }));
@@ -58,21 +63,14 @@ const BasicInfo = () => {
           description: "Please upload a PDF, DOC, or DOCX file.",
           variant: "destructive",
         });
-        e.target.value = ''; // Clear the file input if invalid
+        e.target.value = '';
       }
     }
   };
 
-  // Client-side form validation
   const validateForm = () => {
-    if (
-      !formData.firstName.trim() ||
-      !formData.lastName.trim() ||
-      !formData.gender ||
-      !formData.dateOfBirth ||
-      !formData.collegeName.trim() 
-      // !formData.countryCode // Added countryCode to validation
-    ) {
+    const { firstName, lastName, gender, dateOfBirth, collegeName } = formData;
+    if (!firstName.trim() || !lastName.trim() || !gender || !dateOfBirth || !collegeName.trim()) {
       toast({
         title: "Validation Error",
         description: "Please fill in all required fields.",
@@ -80,21 +78,15 @@ const BasicInfo = () => {
       });
       return false;
     }
-    // You can add validation for resumeFile here if it's mandatory
-    // e.g., if (!formData.resumeFile) { /* show toast */ return false; }
     return true;
   };
 
-  // Form submission handler
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault(); // Prevent default browser form submission
-    if (!validateForm()) return; // Run client-side validation
-
-    setIsLoading(true); // Set loading state
+    e.preventDefault();
+    if (!validateForm()) return;
+    setIsLoading(true);
 
     try {
-      // Get user email and phone from context. Provide fallbacks if they might be null/undefined.
-      // Make sure 'user' object is reliably populated from your AuthContext upon login/signup.
       const email = user?.email;
       if (!email) {
         toast({
@@ -102,41 +94,35 @@ const BasicInfo = () => {
           description: "User email not found. Please log in again.",
           variant: "destructive",
         });
-        setIsLoading(false);
         return;
       }
-      const phone = user?.mobile || ""; // Phone might not be directly used for update, but passed for consistency
 
-      // Create FormData object to send multipart/form-data (required for file uploads)
-      const form = new FormData();
-      form.append("email", email);
-      form.append("phone", phone); // Not strictly needed for update, but included
-      form.append("first_name", formData.firstName); // Match server's expected field name
-      form.append("last_name", formData.lastName);   // Match server's expected field name
-      form.append("gender", formData.gender);
-      // Format date to 'YYYY-MM-DD' string as expected by MySQL DATE type
-      form.append("date_of_birth", formData.dateOfBirth ? format(formData.dateOfBirth, 'yyyy-MM-dd') : "");
-      form.append("college_name", formData.collegeName);
-      form.append("years_of_experience", formData.yearsOfExperience.toString()); // Convert number to string
-      // form.append("country_code", formData.countryCode); // Append country code to FormData
-      if (formData.resumeFile) {
-        form.append("resume", formData.resumeFile); // Append the actual File object
-      }
+      const payload = {
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        gender: formData.gender,
+        dateOfBirth: formData.dateOfBirth ? format(formData.dateOfBirth, 'yyyy-MM-dd') : "",
+        collegeName: formData.collegeName,
+        yearsOfExperience: formData.yearsOfExperience,
+        mobile: user?.mobile || ""
+      };
 
-      // Send POST request to your backend API
-      const response = await fetch("http://localhost:8000/api/basic-info", {
+      const response = await fetch("http://localhost:8000/api/v1/auth/basic-info", {
         method: "POST",
-        body: form, // FormData object is passed directly. Browser sets Content-Type automatically.
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify(payload),
       });
 
-      const result = await response.json(); // Parse the JSON response from the server
+      const result = await response.json();
 
-      if (response.ok && result.success) { // Check both HTTP status and custom success flag
-        // Update user profile in AuthContext
+      if (response.ok) {
         updateProfile({
-          ...formData, // Spread existing form data
-          dateOfBirth: formData.dateOfBirth ? format(formData.dateOfBirth, 'yyyy-MM-dd') : "", // Store as string in context
-          isProfileComplete: true // Mark profile as complete
+          ...formData,
+          dateOfBirth: format(formData.dateOfBirth!, 'yyyy-MM-dd'),
+          isProfileComplete: true
         });
 
         toast({
@@ -144,22 +130,20 @@ const BasicInfo = () => {
           description: "Welcome to InterviewAI!"
         });
 
-        navigate('/dashboard'); // Navigate to dashboard
+        navigate('/dashboard');
       } else {
-        // Handle API errors (e.g., validation errors from server, user not found, file upload errors)
-        const errorMessage = result.error || result.message || "Failed to update profile. Please try again.";
-        throw new Error(errorMessage);
+        throw new Error(result.error || result.message || "Profile update failed.");
       }
 
     } catch (error) {
       console.error("Submission error:", error);
       toast({
         title: "Error",
-        description: `Something went wrong: ${error instanceof Error ? error.message : "An unknown error occurred."}`,
+        description: `Something went wrong: ${error instanceof Error ? error.message : "Unknown error"}`,
         variant: "destructive"
       });
     } finally {
-      setIsLoading(false); // Reset loading state
+      setIsLoading(false);
     }
   };
 
@@ -183,7 +167,6 @@ const BasicInfo = () => {
                   value={formData.firstName}
                   onChange={(e) => handleInputChange('firstName', e.target.value)}
                   required
-                  className="transition-all duration-300 focus:scale-105"
                 />
               </div>
               <div className="space-y-2">
@@ -194,37 +177,9 @@ const BasicInfo = () => {
                   value={formData.lastName}
                   onChange={(e) => handleInputChange('lastName', e.target.value)}
                   required
-                  className="transition-all duration-300 focus:scale-105"
                 />
               </div>
             </div>
-
-            {/* NEW: Country Code Select */}
-            {/* <div className="space-y-2">
-              <Label htmlFor="countryCode">Country Code *</Label>
-              <Select
-                value={formData.countryCode}
-                onValueChange={(value) => handleInputChange('countryCode', value)}
-              >
-                <SelectTrigger className="transition-all duration-300 hover:scale-105">
-                  <SelectValue placeholder="Select country code" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="+1">🇺🇸 +1 (USA/Canada)</SelectItem>
-                  <SelectItem value="+44">🇬🇧 +44 (UK)</SelectItem>
-                  <SelectItem value="+91">🇮🇳 +91 (India)</SelectItem>
-                  <SelectItem value="+49">🇩🇪 +49 (Germany)</SelectItem>
-                  <SelectItem value="+33">🇫🇷 +33 (France)</SelectItem>
-                  <SelectItem value="+81">🇯🇵 +81 (Japan)</SelectItem>
-                  {/* Add more country codes here as needed */}
-                  {/* <SelectItem value="+86">🇨🇳 +86 (China)</SelectItem>
-                  <SelectItem value="+61">🇦🇺 +61 (Australia)</SelectItem>
-                  <SelectItem value="+52">🇲🇽 +52 (Mexico)</SelectItem>
-                  <SelectItem value="+55">🇧🇷 +55 (Brazil)</SelectItem>
-                  <SelectItem value="+7">🇷🇺 +7 (Russia)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div> */} 
 
             <div className="space-y-2">
               <Label>Gender *</Label>
@@ -254,7 +209,7 @@ const BasicInfo = () => {
                 <PopoverTrigger asChild>
                   <Button
                     className={cn(
-                      "w-full justify-start text-left font-normal transition-all duration-300 hover:scale-105",
+                      "w-full justify-start text-left font-normal",
                       !formData.dateOfBirth && "text-muted-foreground"
                     )}
                   >
@@ -283,7 +238,6 @@ const BasicInfo = () => {
                 value={formData.collegeName}
                 onChange={(e) => handleInputChange('collegeName', e.target.value)}
                 required
-                className="transition-all duration-300 focus:scale-105"
               />
             </div>
 
@@ -293,7 +247,7 @@ const BasicInfo = () => {
                 value={formData.yearsOfExperience.toString()}
                 onValueChange={(value) => handleInputChange('yearsOfExperience', parseInt(value))}
               >
-                <SelectTrigger className="transition-all duration-300 hover:scale-105">
+                <SelectTrigger>
                   <SelectValue placeholder="Select years of experience" />
                 </SelectTrigger>
                 <SelectContent>
@@ -319,7 +273,7 @@ const BasicInfo = () => {
                 />
                 <Label
                   htmlFor="resume"
-                  className="flex items-center justify-center w-full h-32 border-2 border-dashed border-border rounded-lg cursor-pointer hover:bg-secondary/50 transition-all duration-300 hover:scale-105"
+                  className="flex items-center justify-center w-full h-32 border-2 border-dashed border-border rounded-lg cursor-pointer hover:bg-secondary/50"
                 >
                   <div className="text-center">
                     <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
@@ -331,11 +285,7 @@ const BasicInfo = () => {
               </div>
             </div>
 
-            <Button
-              type="submit"
-              className="w-full transition-all duration-300 hover:scale-105"
-              disabled={isLoading}
-            >
+            <Button type="submit" className="w-full" disabled={isLoading}>
               {isLoading ? "Completing Profile..." : "Complete Profile"}
             </Button>
           </form>

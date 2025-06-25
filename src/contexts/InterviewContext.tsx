@@ -1,6 +1,5 @@
-import React, { createContext, useState, useContext, useEffect, ReactNode } from 'react';
-import { v4 as uuidv4 } from 'uuid';
-
+import React, { createContext, useState, useContext, useEffect, ReactNode, useCallback } from 'react';
+import { useAuth } from "../contexts/AuthContext"; 
 export interface Room {
   id: string;
   userId?: string;
@@ -10,66 +9,137 @@ export interface Room {
   yearsOfExperience: number;
   currentDesignation: string;
   sessionInterval?: number;
-  resumeUrl?: string;
   createdAt: string;
-  hasCompletedInterview?: boolean; // <-- NEW: Flag to track completion
+  hasCompletedInterview?: boolean;
+  transcript?: string;
+  metrics?: any;
 }
 
 interface InterviewContextType {
   rooms: Room[];
-  createRoom: (roomData: Omit<Room, 'id' | 'createdAt' | 'hasCompletedInterview'>) => string;
+  createRoom: (roomData: Omit<Room, 'id' | 'createdAt' | 'hasCompletedInterview' | 'transcript' | 'metrics'>) => Promise<string>;
   getRoom: (roomId: string) => Room | undefined;
-  deleteRoom: (roomId: string) => void;
-  markRoomAsCompleted: (roomId: string) => void; // <-- NEW: Action to set the flag
+  deleteRoom: (roomId: string) => Promise<void>;
+  markRoomAsCompleted: (roomId: string) => Promise<void>;
+  updateRoom: (roomId: string, updates: Partial<Omit<Room, 'id'>>) => Promise<void>;
+  getCompletedRooms: () => Room[];
+  getPendingRooms: () => Room[];
 }
 
 const InterviewContext = createContext<InterviewContextType | undefined>(undefined);
 
 export const InterviewProvider = ({ children }: { children: ReactNode }) => {
-  const [rooms, setRooms] = useState<Room[]>(() => {
-    try {
-      const savedRooms = localStorage.getItem('interviewRooms');
-      return savedRooms ? JSON.parse(savedRooms) : [];
-    } catch (error) {
-      console.error("Failed to parse rooms from localStorage", error);
-      return [];
-    }
-  });
+  const [rooms, setRooms] = useState<Room[]>([]);
 
-  useEffect(() => {
-    localStorage.setItem('interviewRooms', JSON.stringify(rooms));
+ const { user } = useAuth(); // Get authenticated user
+
+useEffect(() => {
+  const fetchRooms = async () => {
+    try {
+      const res = await fetch("http://localhost:8000/api/v1/sessions/", {
+        credentials: "include",
+      });
+
+      if (res.status === 401) {
+        console.warn("Not authorized to fetch rooms. User might not be logged in.");
+        return;
+      }
+
+      const data = await res.json();
+      setRooms(data.sessions);
+    } catch (error) {
+      console.error("Failed to fetch rooms:", error);
+    }
+  };
+
+  if (user) {
+    fetchRooms();
+  }
+}, [user]); // Re-run when user is available
+
+  const createRoom = async (roomData: Omit<Room, 'id' | 'createdAt' | 'hasCompletedInterview' | 'transcript' | 'metrics'>): Promise<string> => {
+    try {
+      const res = await fetch("http://localhost:8000/api/v1/sessions/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(roomData),
+      });
+      const newRoom = await res.json();
+      setRooms(prev => [...prev, newRoom]);
+      return newRoom.id;
+    } catch (err) {
+      console.error("Failed to create room:", err);
+      throw err;
+    }
+  };
+
+  const getRoom = useCallback((roomId: string): Room | undefined => {
+    return rooms.find(room => room.id === roomId);
   }, [rooms]);
 
-  const createRoom = (roomData: Omit<Room, 'id' | 'createdAt' | 'hasCompletedInterview'>): string => {
-    const newId = uuidv4();
-    const newRoom: Room = {
-      ...roomData,
-      id: newId,
-      createdAt: new Date().toISOString(),
-      hasCompletedInterview: false, // Default to false on creation
-    };
-    setRooms((prevRooms) => [...prevRooms, newRoom]);
-    return newId;
+  const deleteRoom = async (roomId: string): Promise<void> => {
+    try {
+      await fetch(`http://localhost:8000/api/v1/sessions/${roomId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      setRooms(prev => prev.filter(room => room.id !== roomId));
+    } catch (error) {
+      console.error("Failed to delete room:", error);
+      throw error;
+    }
   };
 
-  const getRoom = (roomId: string): Room | undefined => {
-    return rooms.find(room => room.id === roomId);
+  const markRoomAsCompleted = async (roomId: string) => {
+    try {
+      const res = await fetch(`http://localhost:8000/api/v1/sessions/${roomId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ hasCompletedInterview: true }),
+      });
+      const updatedRoom = await res.json();
+      setRooms(prev => prev.map(r => (r.id === roomId ? updatedRoom : r)));
+    } catch (error) {
+      console.error("Failed to mark room as completed:", error);
+    }
   };
 
-  const deleteRoom = (roomId: string): void => {
-    setRooms((prevRooms) => prevRooms.filter(room => room.id !== roomId));
+  const updateRoom = async (roomId: string, updates: Partial<Omit<Room, 'id'>>) => {
+    try {
+      const res = await fetch(`http://localhost:8000/api/v1/sessions/${roomId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(updates),
+      });
+      const updatedRoom = await res.json();
+      setRooms(prev => prev.map(r => (r.id === roomId ? updatedRoom : r)));
+    } catch (error) {
+      console.error("Failed to update room:", error);
+      throw error;
+    }
   };
 
-  // NEW: Implementation of the new action
-  const markRoomAsCompleted = (roomId: string) => {
-    setRooms(prevRooms =>
-      prevRooms.map(room =>
-        room.id === roomId ? { ...room, hasCompletedInterview: true } : room
-      )
-    );
-  };
+  const getCompletedRooms = useCallback(() => {
+    return rooms.filter(room => room.hasCompletedInterview);
+  }, [rooms]);
 
-  const value = { rooms, createRoom, getRoom, deleteRoom, markRoomAsCompleted };
+  const getPendingRooms = useCallback(() => {
+    return rooms.filter(room => !room.hasCompletedInterview);
+  }, [rooms]);
+
+  const value = {
+    rooms,
+    createRoom,
+    getRoom,
+    deleteRoom,
+    markRoomAsCompleted,
+    updateRoom,
+    getCompletedRooms,
+    getPendingRooms
+  };
 
   return (
     <InterviewContext.Provider value={value}>

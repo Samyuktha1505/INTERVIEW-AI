@@ -380,10 +380,11 @@ const validatePassword = (password: string) => {
               formData.append("old_password", oldPassword);
               formData.append("new_password", newPassword);
 
-              const res = await fetch("http://localhost:8000/api/reset-password-old", {
-                method: "POST",
-                body: formData,
+              const res = await fetch("http://localhost:8000/api/v1/auth/reset-password", {
+                    method: "POST",
+                    body: formData,
               });
+
               
               const data = await res.json();
               

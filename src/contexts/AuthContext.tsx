@@ -1,4 +1,11 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  ReactNode,
+} from "react";
 
 interface User {
   id: string;
@@ -17,71 +24,103 @@ interface User {
 
 interface AuthContextType {
   user: User | null;
-  login: (email: string, password: string) => Promise<boolean>;
+  login: (email: string, password: string) => Promise<void>;
   signup: (
     email: string,
     password: string,
     mobile: string,
     countryCode: string
-  ) => Promise<boolean>;
+  ) => Promise<void>;
   logout: () => void;
   updateProfile: (profileData: Partial<User>) => void;
   isLoading: boolean;
-  loginWithGoogle: (credential: string) => Promise<boolean>;
-  setUser: (user: User | null) => void;
+  error: string | null;
+  loginWithGoogle: (credential: string) => Promise<void>;
+  accessToken: string | null;
+  refreshToken: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export const useAuth = () => {
+export function useAuth(): AuthContextType {
   const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
+  if (!context) {
+    throw new Error("useAuth must be used within an AuthProvider");
   }
   return context;
-};
+}
 
-export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+const BASE_AUTH_URL = "http://localhost:8000/api/v1/auth";
+
+export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const storedUser = localStorage.getItem('user');
-    if (storedUser) {
-      setUser(JSON.parse(storedUser));
-    }
-    setIsLoading(false);
-  }, []);
-
-  const login = async (email: string, password: string): Promise<boolean> => {
+  const initializeAuth = useCallback(async () => {
     try {
-      // Changed from 3001 to 8000
-      const response = await fetch('http://localhost:8000/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+      const response = await fetch(`${BASE_AUTH_URL}/me`, {
+        credentials: "include",
       });
 
+      if (response.ok) {
+        const data = await response.json();
+        setUser(data.user);
+      }
+    } catch {
+      // Do nothing — user not logged in
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    initializeAuth();
+  }, [initializeAuth]);
+
+  const handleResponseError = async (response: Response) => {
+  if (!response.ok) {
+    try {
+      const contentType = response.headers.get("Content-Type");
+      if (contentType?.includes("application/json")) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || response.statusText);
+      } else {
+        const text = await response.text();
+        throw new Error(text || response.statusText);
+      }
+    } catch (err) {
+      throw new Error("Unexpected error occurred.");
+    }
+  }
+};
+
+
+  const login = async (email: string, password: string) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`${BASE_AUTH_URL}/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+        credentials: "include",
+      });
+
+      await handleResponseError(response);
       const data = await response.json();
 
-      if (data.success) {
-        const userFromDB: User = {
-          id: data.user_id.toString(), // user_id is directly in data
-          email: email,
-          // mobile and isProfileComplete are not directly returned by /api/login in current main.py
-          // You might need to fetch full user details from another endpoint after login if needed immediately
-          isProfileComplete: false, // Assume not complete until basic-info is confirmed
-        };
-
-        setUser(userFromDB);
-        localStorage.setItem('user', JSON.stringify(userFromDB));
-        return true;
-      } else {
-        return false;
-      }
-    } catch (error) {
-      console.error('Login error:', error);
-      return false;
+      setUser({
+        id: data.user_id.toString(),
+        email: email,
+        isProfileComplete: data.isProfileComplete || false,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Login failed");
+      throw err;
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -90,115 +129,115 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     password: string,
     mobile: string,
     countryCode: string
-  ): Promise<boolean> => {
+  ) => {
+    setIsLoading(true);
+    setError(null);
     try {
-      // Changed from 3001 to 8000
-      const response = await fetch('http://localhost:8000/api/signup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch(`${BASE_AUTH_URL}/signup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password, mobile, countryCode }),
+        credentials: "include",
       });
 
+      await handleResponseError(response);
       const data = await response.json();
 
-      if (data.success) {
-        const newUser: User = {
-          id: data.user_id.toString(), // user_id is directly in data
-          email,
-          mobile,
-          isProfileComplete: false, // Profile not complete yet
-        };
-
-        // You might not need to store password in localStorage for security reasons.
-        // It's generally better to rely on successful authentication token/session.
-        // If 'users' localStorage is just for local dev state, then keep it, otherwise remove.
-        const users = JSON.parse(localStorage.getItem('users') || '[]');
-        users.push({ ...newUser, password }); // Consider removing password here
-        localStorage.setItem('users', JSON.stringify(users));
-
-        setUser(newUser);
-        localStorage.setItem('user', JSON.stringify(newUser));
-        return true;
-      } else {
-        return false;
-      }
-    } catch (error) {
-      console.error('Signup error:', error);
-      return false;
+      setUser({
+        id: data.user_id.toString(),
+        email,
+        mobile,
+        countryCode,
+        isProfileComplete: false,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Signup failed");
+      throw err;
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const logout = () => {
+  const logout = async () => {
+  try {
+    await fetch(`/api/v1/logging/logout`, {
+      method: "POST",
+      credentials: "include",
+    });
+  } catch (err) {
+    console.warn("Logout request failed:", err);
+  } finally {
     setUser(null);
-    localStorage.removeItem('user');
-    localStorage.removeItem('users'); // Clear if 'users' is used for local state
-  };
+    setError(null);
+  }
+};
+
 
   const updateProfile = (profileData: Partial<User>) => {
-    if (user) {
-      const updatedUser = { ...user, ...profileData };
-      setUser(updatedUser);
-      localStorage.setItem('user', JSON.stringify(updatedUser));
-
-      const users = JSON.parse(localStorage.getItem('users') || '[]');
-      const userIndex = users.findIndex((u: any) => u.id === user.id);
-      if (userIndex !== -1) {
-        // Only update fields that are present in profileData, preserving others
-        users[userIndex] = { ...users[userIndex], ...profileData };
-        localStorage.setItem('users', JSON.stringify(users));
-      }
-    }
+    if (!user) return;
+    setUser(prev => prev ? { ...prev, ...profileData } : null);
   };
 
-  const loginWithGoogle = async (credential: string): Promise<boolean> => {
+  const loginWithGoogle = async (credential: string) => {
+    setIsLoading(true);
+    setError(null);
     try {
-      // Changed from 3001 to 8000
-      const response = await fetch('http://localhost:8000/api/google-auth-login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch(`${BASE_AUTH_URL}/google-auth-login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token: credential }),
+        credentials: "include",
       });
 
+      await handleResponseError(response);
       const data = await response.json();
 
-      if (data.success) {
-        const googleUser: User = {
-          id: data.user_id.toString(), // Direct from data, not data.user
-          email: data.email,       // Direct from data, not data.user
-          isProfileComplete: true, // Assuming Google users are treated as profile complete initially or checked elsewhere
-          // The following fields are NOT returned by current /api/google-auth-login,
-          // so remove them or handle them as optional/fetch separately if needed
-          // firstName: data.user.first_name,
-          // lastName: data.user.last_name,
-          // mobile: data.user.phone,
-          // gender: data.user.gender,
-          // dateOfBirth: data.user.date_of_birth,
-          // collegeName: data.user.college_name,
-        };
-
-        setUser(googleUser);
-        localStorage.setItem('user', JSON.stringify(googleUser));
-        return true;
-      } else {
-        console.error('Google login failed:', data.message);
-        return false;
-      }
-    } catch (error) {
-      console.error('Google login error:', error);
-      return false;
+      setUser({
+        id: data.user_id.toString(),
+        email: data.email,
+        isProfileComplete: data.isProfileComplete || true,
+      });
+      setAccessToken(data.access_token); // Optional — you're not using it directly
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Google login failed");
+      throw err;
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const value = {
-    user,
-    login,
-    signup,
-    logout,
-    updateProfile,
-    isLoading,
-    loginWithGoogle,
-    setUser,
+  const refreshToken = async () => {
+    try {
+      const response = await fetch(`${BASE_AUTH_URL}/refresh-token`, {
+        method: "POST",
+        credentials: "include",
+      });
+
+      await handleResponseError(response);
+      const data = await response.json();
+      setAccessToken(data.access_token);
+    } catch (err) {
+      logout();
+      throw err;
+    }
   };
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
-};
+  return (
+    <AuthContext.Provider
+      value={{
+        user,
+        login,
+        signup,
+        logout,
+        updateProfile,
+        isLoading,
+        error,
+        loginWithGoogle,
+        accessToken,
+        refreshToken,
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
+}

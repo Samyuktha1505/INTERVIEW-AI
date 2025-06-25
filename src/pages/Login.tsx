@@ -1,4 +1,3 @@
-// Login.tsx
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,9 +20,10 @@ const Login = () => {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const { user, setUser } = useAuth();
+  const { user, login } = useAuth();
   const navigate = useNavigate();
 
+  // 🚫 Removed localStorage check. Just use user state from context
   useEffect(() => {
     if (user) {
       navigate("/dashboard");
@@ -35,36 +35,13 @@ const Login = () => {
     setIsLoading(true);
 
     try {
-      const res = await fetch("http://localhost:8000/api/login", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ email, password }),
-      });
-
-      const data = await res.json();
-
-      if (res.ok && data.success) {
-        toast({ title: "Login successful", description: "Welcome back!" });
-        setUser({
-          id: data.user_id?.toString() || Date.now().toString(),
-          email,
-          isProfileComplete: true,
-        });
-        navigate("/dashboard");
-      } else {
-        toast({
-          title: "Login failed",
-          description: data.message || "Invalid email or password",
-          variant: "destructive",
-        });
-      }
+      await login(email, password); // this should fetch and set user via cookies
+      toast({ title: "Login successful", description: "Welcome back!" });
+      navigate("/dashboard");
     } catch (err) {
-      console.error("Login error:", err);
       toast({
-        title: "Error",
-        description: "Something went wrong. Try again later.",
+        title: "Login failed",
+        description: "Invalid email or password",
         variant: "destructive",
       });
     } finally {
@@ -77,29 +54,19 @@ const Login = () => {
       const token = credentialResponse?.credential;
       if (!token) throw new Error("No token received");
 
-      const res = await fetch("http://localhost:8000/api/google-auth-login", {
+      const res = await fetch("http://localhost:8000/api/v1/auth/google-auth-login", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include", // ✅ allow cookie to be set by backend
         body: JSON.stringify({ token }),
       });
 
-      const data = await res.json();
+      if (!res.ok) throw new Error("Google login failed");
 
-      if (res.ok && data.success) {
-        toast({ title: "Login successful", description: "Welcome back!" });
-        setUser({
-          id: data.user_id?.toString() || Date.now().toString(),
-          email: data.email,
-          isProfileComplete: true,
-        });
-        navigate("/dashboard");
-      } else {
-        toast({
-          title: "Google Login failed",
-          description: data.message || "User not found in our system",
-          variant: "destructive",
-        });
-      }
+      toast({ title: "Login successful", description: "Welcome back!" });
+      navigate("/dashboard");
     } catch (err) {
       console.error("Google login error:", err);
       toast({
@@ -120,18 +87,17 @@ const Login = () => {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {/* Google Login at the top */}
           <div className="flex justify-center mb-4">
             <GoogleLogin
               onSuccess={handleGoogleLogin}
-              onError={() =>
+              onError={() => {
+                console.error("❌ Google Login Failed");
                 toast({
-                  title: "Google Login Failed",
-                  description: "Please try again later.",
+                  title: "Error",
+                  description: "Google login failed.",
                   variant: "destructive",
-                })
-              }
-              useOneTap
+                });
+              }}
             />
           </div>
           <div className="flex items-center my-4">
@@ -176,11 +142,12 @@ const Login = () => {
                 </Button>
               </div>
             </div>
+
             <div className="mt-2 text-center">
-  <Link to="/forgot-password" className="text-sm text-primary hover:underline">
-    Forgot Password?
-  </Link>
-</div>
+              <Link to="/forgot-password" className="text-sm text-primary hover:underline">
+                Forgot Password?
+              </Link>
+            </div>
 
             <Button
               type="submit"

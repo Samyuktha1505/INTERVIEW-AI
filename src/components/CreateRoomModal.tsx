@@ -20,8 +20,7 @@ import { Slider } from "@/components/ui/slider";
 import { useAuth } from "../contexts/AuthContext";
 import { useInterview } from "../contexts/InterviewContext";
 import { toast } from "@/hooks/use-toast";
-import { Upload } from "lucide-react";
-import { analyzeResume } from "../services/resumeAnalysis";
+import { analyzeResume } from "../services/resumeAnalysis"; // This call will need to be reviewed against the backend's new expectation (no resume file)
 
 interface CreateRoomModalProps {
   open: boolean;
@@ -36,7 +35,6 @@ const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ open, onOpenChange })
     yearsOfExperience: 0,
     sessionInterval: '',
     interviewType: '',
-    resumeFile: null as File | null,
   });
 
   const [isLoading, setIsLoading] = useState(false);
@@ -56,29 +54,18 @@ const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ open, onOpenChange })
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file && file.type === 'application/pdf') {
-      setFormData((prev) => ({ ...prev, resumeFile: file }));
-    } else if (file) {
-      toast({
-        title: "Invalid file type",
-        description: "Please upload a PDF file.",
-        variant: "destructive",
-      });
-    }
-  };
 
   const validateForm = () => {
-    const { currentDesignation, targetRole, targetCompany, interviewType, resumeFile } = formData;
+    const { currentDesignation, targetRole, targetCompany, interviewType } = formData; // Removed resumeFile
     if (!currentDesignation || !targetRole || !targetCompany || !interviewType) {
       toast({ title: "Validation Error", description: "Please fill in all required fields.", variant: "destructive" });
       return false;
     }
-    if (!resumeFile && !user?.resumeUrl) {
-      toast({ title: "Validation Error", description: "Please upload a resume.", variant: "destructive" });
-      return false;
-    }
+    // Removed resumeFile validation
+    // if (!resumeFile && !user?.resumeUrl) {
+    //   toast({ title: "Validation Error", description: "Please upload a resume.", variant: "destructive" });
+    //   return false;
+    // }
     return true;
   };
 
@@ -94,18 +81,6 @@ const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ open, onOpenChange })
     setIsLoading(true);
 
     try {
-      let resumeToUpload = formData.resumeFile;
-      if (!resumeToUpload && user?.resumeUrl) {
-        const response = await fetch(user.resumeUrl);
-        const blob = await response.blob();
-        resumeToUpload = new File([blob], 'resume.pdf', { type: 'application/pdf' });
-      }
-      
-      if (!resumeToUpload) {
-        toast({ title: "Validation Error", description: "A resume PDF file is required.", variant: "destructive"});
-        setIsLoading(false);
-        return;
-      }
 
       const roomData = {
         userId: user.id,
@@ -115,24 +90,24 @@ const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ open, onOpenChange })
         yearsOfExperience: formData.yearsOfExperience,
         sessionInterval: formData.sessionInterval ? Number(formData.sessionInterval) : undefined,
         interviewType: formData.interviewType,
-        resumeUrl: URL.createObjectURL(resumeToUpload),
       };
-      const newRoomId = createRoom(roomData);
+ 
 
-      const analysisFormData = new FormData();
-      analysisFormData.append('resume', resumeToUpload);
-      analysisFormData.append('session_id', newRoomId);
-      analysisFormData.append('targetRole', formData.targetRole);
-      analysisFormData.append('targetCompany', formData.targetCompany);
-      analysisFormData.append('yearsOfExperience', formData.yearsOfExperience.toString());
-      analysisFormData.append('currentDesignation', formData.currentDesignation);
-      analysisFormData.append('interviewType', formData.interviewType);
-      analysisFormData.append('sessionInterval', formData.sessionInterval);
+      // Changed from FormData to a plain object as per previous discussions,
+      // because no resume file is being sent directly from the frontend.
+      const analysisPayload = {
+        targetRole: formData.targetRole,
+        targetCompany: formData.targetCompany,
+        yearsOfExperience: formData.yearsOfExperience.toString(),
+        currentDesignation: formData.currentDesignation,
+        interviewType: formData.interviewType,
+        sessionInterval: formData.sessionInterval ? Number(formData.sessionInterval) : undefined, // Ensure type matches backend expectation
+        user_email: user.email,
+        // Removed: 'resume' field
+      };
       
-      // THIS IS THE CRUCIAL FIX for the 422 error
-      analysisFormData.append('user_email', user.email);
-
-      await analyzeResume(analysisFormData);
+      // Call analyzeResume with the plain JSON object
+      await analyzeResume(analysisPayload);
 
       toast({
         title: "Room created successfully!",
@@ -140,6 +115,16 @@ const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ open, onOpenChange })
       });
       
       onOpenChange(false);
+      // Reset form data on successful room creation
+      setFormData({
+        currentDesignation: '',
+        targetRole: '',
+        targetCompany: '',
+        yearsOfExperience: 0,
+        sessionInterval: '',
+        interviewType: '',
+      });
+
 
     } catch (error: any) {
       toast({
@@ -197,32 +182,6 @@ const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ open, onOpenChange })
                 ))}
               </SelectContent>
             </Select>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="resume">Resume *</Label>
-            {user?.resumeUrl && !formData.resumeFile && (
-              <p className="text-sm text-muted-foreground">Using your previously uploaded resume</p>
-            )}
-            <div className="relative">
-              <Input
-                id="resume"
-                type="file"
-                accept=".pdf"
-                onChange={handleFileChange}
-                className="hidden"
-              />
-              <Label
-                htmlFor="resume"
-                className="flex items-center justify-center w-full h-20 border-2 border-dashed border-border rounded-lg cursor-pointer hover:bg-secondary/50 transition-colors"
-              >
-                <div className="text-center">
-                  <Upload className="h-6 w-6 mx-auto mb-1 text-muted-foreground" />
-                  <p className="text-xs text-muted-foreground">
-                    {formData.resumeFile ? formData.resumeFile.name : "Upload resume (PDF only)"}
-                  </p>
-                </div>
-              </Label>
-            </div>
           </div>
           <div className="pt-4">
             <Button
