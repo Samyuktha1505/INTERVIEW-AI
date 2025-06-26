@@ -4,11 +4,44 @@ from pydantic import BaseModel, EmailStr
 from typing import Optional
 import datetime
 from passlib.context import CryptContext
-
+import random
+import logging
+import smtplib
 from backend.db.mysql import get_db_connection
 from backend.db.redis import redis_client
 from backend.utils.jwt_auth import create_access_token, get_current_user
+from backend.utils.email_validator import is_real_email
+from backend.config import settings
+from datetime import timedelta
+from email.mime.text import MIMEText
 
+def get_email_transporter():
+    try:
+        server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
+        server.login(settings.email_user, settings.email_pass)
+        return server
+    except Exception as e:
+        logging.error(f"Failed to connect to email server: {e}")
+        # Use HTTPException with status.HTTP_503_SERVICE_UNAVAILABLE for clearer error
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Email service unavailable. Check EMAIL_USER/EMAIL_PASS in .env")
+
+class GoogleAuthPayload(BaseModel):
+    token: str
+
+class ForgotPasswordPayload(BaseModel):
+    email: str
+
+class VerifyOtpPayload(BaseModel):
+    email: str
+    otp: str
+
+class ResetPasswordPayload(BaseModel):
+    email: str
+    otp: str
+    newPassword: str
+
+class MetricsPayload(BaseModel):
+    session_id: str
 router = APIRouter()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -147,40 +180,54 @@ async def signup(payload: SignupPayload, request: Request):
 
 @router.post("/login")
 async def login(payload: LoginPayload, request: Request):
-    ip = request.client.host or "unknown"
-    redis_key = f"login_attempts:{ip}"
-    attempts = int(redis_client.get(redis_key) or 0)
+   
+    ip         = request.client.host or "unknown"
+    redis_key  = f"login_attempts:{ip}"
+    attempts   = int(redis_client.get(redis_key) or 0)
 
     if attempts >= 5:
-        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many login attempts. Try again later.")
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many login attempts. Try again later."
+        )
 
     user = get_user_by_email(payload.email)
+    if not user or user["hash_password"] is None:
+        redis_client.incr(redis_key); redis_client.expire(redis_key, 300)
+        raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    if not user or not verify_password(payload.password, user["hash_password"]):
-        redis_client.incr(redis_key)
-        redis_client.expire(redis_key, 300)  # lockout window 5 min
-        log_login_trace(user["user_id"] if user else -1, ip, "FAILED")
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+   
+    hashed_pw = user["hash_password"]
+    if isinstance(hashed_pw, (bytes, bytearray)):
+        hashed_pw = hashed_pw.decode()
 
+    
+    hashed_pw = hashed_pw.strip()
+
+    if not verify_password(payload.password, hashed_pw):
+        redis_client.incr(redis_key); redis_client.expire(redis_key, 300)
+        log_login_trace(user["user_id"], ip, "FAILED")
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    
     redis_client.delete(redis_key)
     log_login_trace(user["user_id"], ip, "SUCCESS")
 
-    token = create_access_token({
-        "sub": str(user["user_id"]),
-        "email": user["email"],
-        "user_id": user["user_id"]
-    }, ACCESS_TOKEN_EXPIRE_MINUTES)
-
+    token = create_access_token(
+        {"sub": str(user["user_id"]),
+         "email": user["email"],
+         "user_id": user["user_id"]},
+        ACCESS_TOKEN_EXPIRE_MINUTES
+    )
     store_token_in_redis(str(user["user_id"]), token, ACCESS_TOKEN_EXPIRE_MINUTES * 60)
 
-    response = JSONResponse(content={
+    resp = JSONResponse({
         "user_id": user["user_id"],
-        "email": user["email"],
+        "email":   user["email"],
         "isProfileComplete": False
     })
-    set_token_cookie(response, token)
-    return response
-
+    set_token_cookie(resp, token)
+    return resp
 
 @router.post("/google-auth-login")
 async def google_auth_login(request: Request):
@@ -320,3 +367,250 @@ async def get_me(current_user: dict = Depends(get_current_user)):
     finally:
         cursor.close()
         conn.close()
+
+def generate_otp():
+    return str(random.randint(100000, 999999))
+otp_storage = {}
+@router.post('/api/forgot-password')
+async def forgot_password(payload: ForgotPasswordPayload):
+    email = payload.email
+    db_conn = None
+    cursor = None
+    
+    try:
+        db_conn = get_db_connection()
+        cursor = db_conn.cursor()
+        cursor.execute("""
+    SELECT u.user_id
+    FROM User u
+    JOIN HASH h ON u.user_id = h.user_id
+    WHERE u.email = %s
+""", (email,))
+        user_exists = cursor.fetchone()
+        
+        if not user_exists:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Email does not exist.')
+      
+        otp = generate_otp()
+        expires_at = datetime.now() + timedelta(minutes=15)
+        otp_storage[email] = {'otp': otp, 'expires_at': expires_at}
+
+        # Send OTP via email (your existing code)
+        msg = MIMEText(f"Your OTP for password reset is: {otp}\nThis OTP will expire in 15 minutes.")
+        msg['Subject'] = 'Password Reset OTP'
+        msg['From'] = settings.email_user
+        msg['To'] = email
+
+        transporter = get_email_transporter()
+        transporter.send_message(msg)
+        transporter.quit()
+
+        return JSONResponse(content={"success": True, "message": "OTP sent successfully"})
+
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logging.error(f"Error in forgot password for {email}: {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error.")
+    finally:
+        if cursor: cursor.close()
+        if db_conn and db_conn.is_connected(): db_conn.close()
+
+
+@router.post('/api/verify-otp')
+async def verify_otp(payload: VerifyOtpPayload):
+    email = payload.email
+    otp = payload.otp
+
+    try:
+        stored_data = otp_storage.get(email)
+        if not stored_data:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='OTP expired or not found.')
+
+        if datetime.now() > stored_data['expires_at']:
+            del otp_storage[email]
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='OTP expired.')
+
+        if stored_data['otp'] != otp:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Invalid OTP.')
+
+        # Mark as verified
+        otp_storage[email]['verified'] = True
+        return JSONResponse(content={"success": True, "message": "OTP verified successfully"})
+
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logging.error(f"Error verifying OTP for {email}: {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error.")
+
+
+@router.post('/api/reset-password')
+async def reset_password(payload: ResetPasswordPayload):
+    email = payload.email
+    otp = payload.otp
+    new_password = payload.newPassword
+
+    db_conn = None
+    cursor = None
+    try:
+        stored_data = otp_storage.get(email)
+        if not stored_data:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='OTP expired or not found.')
+        if not stored_data.get('verified'):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='OTP not verified.')
+        if datetime.now() > stored_data['expires_at']:
+            del otp_storage[email]
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='OTP expired.')
+        if stored_data['otp'] != otp:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Invalid OTP.')
+
+        db_conn = get_db_connection()
+        cursor = db_conn.cursor()
+        hashed_password = pwd_context.hash(new_password)
+        cursor.execute('UPDATE HASH SET hash_password = %s WHERE email = %s', (hashed_password, email))
+        db_conn.commit()
+        del otp_storage[email]
+        return JSONResponse(content={"success": True, "message": "Password updated successfully"})
+
+    except HTTPException as e:
+        if db_conn: db_conn.rollback()
+        raise e
+    except Exception as e:
+        logging.error(f"Error resetting password for {email}: {e}", exc_info=True)
+        if db_conn: db_conn.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error.")
+    finally:
+        if cursor: cursor.close()
+        if db_conn and db_conn.is_connected(): db_conn.close()
+
+#from here
+
+# @app.post("/v1/analyze_resume/")
+# async def analyze_resume(
+#     resume: UploadFile = File(...),
+#     user_email: str = Form(...),
+#     session_id: str = Form(...),
+#     targetRole: str = Form(...),
+#     targetCompany: str = Form(...),
+#     yearsOfExperience: str = Form(...),
+#     currentDesignation: str = Form(...),
+#     interviewType: str = Form(...),
+#     sessionInterval: str = Form(None)
+# ):
+#     if not resume or not resume.content_type == "application/pdf":
+#         raise HTTPException(status_code=400, detail="A PDF file is required.")
+    
+#     db_conn = None
+#     tmp_file_path = None
+#     cursor = None
+#     try:
+#         print(f"[{datetime.datetime.now()}] Received request for user: {user_email}")
+#         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+#             content = await resume.read()
+#             if len(content) > 5 * 1024 * 1024:
+#                 raise HTTPException(status_code=413, detail="File size exceeds 5MB.")
+#             tmp_file.write(content)
+#             tmp_file_path = tmp_file.name
+        
+#         resume_text = extract_text_from_pdf(tmp_file_path)
+#         if not resume_text.strip():
+#             raise HTTPException(status_code=400, detail="Could not extract text from PDF.")
+        
+#         prompt = llm1_prompt(
+#             resume_text=resume_text, target_role=targetRole, target_company=targetCompany,
+#             years_of_experience=yearsOfExperience, current_designation=currentDesignation,
+#             session_interval=sessionInterval or "N/A", interview_type=interviewType
+#         )
+        
+#         model = genai.GenerativeModel(model_id)
+#         response = model.generate_content(prompt)
+        
+#         extracted_fields_str, questionnaire_str = process_and_extract_json_data(response.text)
+        
+#         full_analysis_data = {
+#             "Extracted_fields": json.loads(extracted_fields_str),
+#             "Questionnaire_prompt": json.loads(questionnaire_str)
+#         }
+
+#         db_conn = get_db_connection()
+#         cursor = db_conn.cursor()
+        
+#         sql_query = """
+#             INSERT INTO InterviewSession (session_id, prompt_example_questions, session_created_at)
+#             VALUES (%s, %s, %s)
+#             ON DUPLICATE KEY UPDATE 
+#                 prompt_example_questions = VALUES(prompt_example_questions);
+#         """
+#         cursor.execute(sql_query, (session_id, json.dumps(full_analysis_data), datetime.datetime.utcnow()))
+#         db_conn.commit()
+        
+#         cursor.execute("SELECT session_id FROM InterviewSession WHERE session_id = %s", (session_id,))
+#         if cursor.fetchone() is None:
+#             raise HTTPException(status_code=500, detail="Failed to save and verify interview session.")
+        
+#         logging.info(f"VERIFICATION SUCCESS: Successfully saved for session_id: {session_id}")
+#         return JSONResponse(content=full_analysis_data)
+        
+#     except Exception as e:
+#         logging.error(f"Error in /analyze_resume/: {e}", exc_info=True)
+#         if db_conn:
+#             db_conn.rollback()
+#         raise HTTPException(status_code=500, detail=str(e))
+#     finally:
+#         if cursor:
+#             cursor.close()
+#         if db_conn and db_conn.is_connected():
+#             db_conn.close()
+#         if tmp_file_path and os.path.exists(tmp_file_path):
+#             os.remove(tmp_file_path)
+
+# @app.get("/v1/analysis/{session_id}")
+# async def get_analysis(session_id: str):
+#     db_conn = None
+#     cursor = None
+#     try:
+#         db_conn = get_db_connection()
+#         cursor = db_conn.cursor(dictionary=True)
+        
+#         # First check if session exists
+#         cursor.execute("""
+#             SELECT s.prompt_example_questions, s.session_created_at,
+#                    i.interview_id, r.resume_id
+#             FROM InterviewSession s
+#             LEFT JOIN Interview i ON s.interview_id = i.interview_id
+#             LEFT JOIN Resume r ON s.resume_id = r.resume_id
+#             WHERE s.session_id = %s
+#         """, (session_id,))
+        
+#         result = cursor.fetchone()
+        
+#         if not result:
+#             raise HTTPException(status_code=404, detail="Session not found")
+            
+#         if not result.get('prompt_example_questions'):
+#             raise HTTPException(
+#                 status_code=425,  # 425 Too Early
+#                 detail="Analysis not ready yet. Please try again shortly."
+#             )
+            
+#         return {
+#             "Questionnaire_prompt": json.loads(result['prompt_example_questions']),
+#             "metadata": {
+#                 "session_created_at": result['session_created_at'],
+#                 "interview_id": result['interview_id'],
+#                 "resume_id": result['resume_id']
+#             }
+#         }
+        
+#     except json.JSONDecodeError:
+#         raise HTTPException(
+#             status_code=500,
+#             detail="Invalid questionnaire data format"
+#         )
+#     finally:
+#         if cursor: cursor.close()
+#         if db_conn and db_conn.is_connected(): db_conn.close()
+
+#to here
+
