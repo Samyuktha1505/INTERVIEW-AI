@@ -11,14 +11,14 @@ from backend.db.mysql import get_db_connection
 from backend.db.redis import redis_client
 from backend.utils.jwt_auth import create_access_token, get_current_user
 from backend.utils.email_validator import is_real_email
-from backend.config import settings
+from backend.config import EMAIL_PASS,EMAIL_USER
 from datetime import timedelta
 from email.mime.text import MIMEText
 
 def get_email_transporter():
     try:
         server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
-        server.login(settings.email_user, settings.email_pass)
+        server.login(EMAIL_USER, EMAIL_PASS)
         return server
     except Exception as e:
         logging.error(f"Failed to connect to email server: {e}")
@@ -398,7 +398,7 @@ async def forgot_password(payload: ForgotPasswordPayload):
         # Send OTP via email (your existing code)
         msg = MIMEText(f"Your OTP for password reset is: {otp}\nThis OTP will expire in 15 minutes.")
         msg['Subject'] = 'Password Reset OTP'
-        msg['From'] = settings.email_user
+        msg['From'] = EMAIL_USER
         msg['To'] = email
 
         transporter = get_email_transporter()
@@ -483,134 +483,3 @@ async def reset_password(payload: ResetPasswordPayload):
     finally:
         if cursor: cursor.close()
         if db_conn and db_conn.is_connected(): db_conn.close()
-
-#from here
-
-# @app.post("/v1/analyze_resume/")
-# async def analyze_resume(
-#     resume: UploadFile = File(...),
-#     user_email: str = Form(...),
-#     session_id: str = Form(...),
-#     targetRole: str = Form(...),
-#     targetCompany: str = Form(...),
-#     yearsOfExperience: str = Form(...),
-#     currentDesignation: str = Form(...),
-#     interviewType: str = Form(...),
-#     sessionInterval: str = Form(None)
-# ):
-#     if not resume or not resume.content_type == "application/pdf":
-#         raise HTTPException(status_code=400, detail="A PDF file is required.")
-    
-#     db_conn = None
-#     tmp_file_path = None
-#     cursor = None
-#     try:
-#         print(f"[{datetime.datetime.now()}] Received request for user: {user_email}")
-#         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
-#             content = await resume.read()
-#             if len(content) > 5 * 1024 * 1024:
-#                 raise HTTPException(status_code=413, detail="File size exceeds 5MB.")
-#             tmp_file.write(content)
-#             tmp_file_path = tmp_file.name
-        
-#         resume_text = extract_text_from_pdf(tmp_file_path)
-#         if not resume_text.strip():
-#             raise HTTPException(status_code=400, detail="Could not extract text from PDF.")
-        
-#         prompt = llm1_prompt(
-#             resume_text=resume_text, target_role=targetRole, target_company=targetCompany,
-#             years_of_experience=yearsOfExperience, current_designation=currentDesignation,
-#             session_interval=sessionInterval or "N/A", interview_type=interviewType
-#         )
-        
-#         model = genai.GenerativeModel(model_id)
-#         response = model.generate_content(prompt)
-        
-#         extracted_fields_str, questionnaire_str = process_and_extract_json_data(response.text)
-        
-#         full_analysis_data = {
-#             "Extracted_fields": json.loads(extracted_fields_str),
-#             "Questionnaire_prompt": json.loads(questionnaire_str)
-#         }
-
-#         db_conn = get_db_connection()
-#         cursor = db_conn.cursor()
-        
-#         sql_query = """
-#             INSERT INTO InterviewSession (session_id, prompt_example_questions, session_created_at)
-#             VALUES (%s, %s, %s)
-#             ON DUPLICATE KEY UPDATE 
-#                 prompt_example_questions = VALUES(prompt_example_questions);
-#         """
-#         cursor.execute(sql_query, (session_id, json.dumps(full_analysis_data), datetime.datetime.utcnow()))
-#         db_conn.commit()
-        
-#         cursor.execute("SELECT session_id FROM InterviewSession WHERE session_id = %s", (session_id,))
-#         if cursor.fetchone() is None:
-#             raise HTTPException(status_code=500, detail="Failed to save and verify interview session.")
-        
-#         logging.info(f"VERIFICATION SUCCESS: Successfully saved for session_id: {session_id}")
-#         return JSONResponse(content=full_analysis_data)
-        
-#     except Exception as e:
-#         logging.error(f"Error in /analyze_resume/: {e}", exc_info=True)
-#         if db_conn:
-#             db_conn.rollback()
-#         raise HTTPException(status_code=500, detail=str(e))
-#     finally:
-#         if cursor:
-#             cursor.close()
-#         if db_conn and db_conn.is_connected():
-#             db_conn.close()
-#         if tmp_file_path and os.path.exists(tmp_file_path):
-#             os.remove(tmp_file_path)
-
-# @app.get("/v1/analysis/{session_id}")
-# async def get_analysis(session_id: str):
-#     db_conn = None
-#     cursor = None
-#     try:
-#         db_conn = get_db_connection()
-#         cursor = db_conn.cursor(dictionary=True)
-        
-#         # First check if session exists
-#         cursor.execute("""
-#             SELECT s.prompt_example_questions, s.session_created_at,
-#                    i.interview_id, r.resume_id
-#             FROM InterviewSession s
-#             LEFT JOIN Interview i ON s.interview_id = i.interview_id
-#             LEFT JOIN Resume r ON s.resume_id = r.resume_id
-#             WHERE s.session_id = %s
-#         """, (session_id,))
-        
-#         result = cursor.fetchone()
-        
-#         if not result:
-#             raise HTTPException(status_code=404, detail="Session not found")
-            
-#         if not result.get('prompt_example_questions'):
-#             raise HTTPException(
-#                 status_code=425,  # 425 Too Early
-#                 detail="Analysis not ready yet. Please try again shortly."
-#             )
-            
-#         return {
-#             "Questionnaire_prompt": json.loads(result['prompt_example_questions']),
-#             "metadata": {
-#                 "session_created_at": result['session_created_at'],
-#                 "interview_id": result['interview_id'],
-#                 "resume_id": result['resume_id']
-#             }
-#         }
-        
-#     except json.JSONDecodeError:
-#         raise HTTPException(
-#             status_code=500,
-#             detail="Invalid questionnaire data format"
-#         )
-#     finally:
-#         if cursor: cursor.close()
-#         if db_conn and db_conn.is_connected(): db_conn.close()
-
-#to here
-
