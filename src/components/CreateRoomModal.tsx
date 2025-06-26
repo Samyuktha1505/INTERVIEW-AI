@@ -98,7 +98,7 @@ const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ open, onOpenChange })
       const analysisPayload = {
         targetRole: formData.targetRole,
         targetCompany: formData.targetCompany,
-        yearsOfExperience: formData.yearsOfExperience.toString(),
+        yearsOfExperience: formData.yearsOfExperience,
         currentDesignation: formData.currentDesignation,
         interviewType: formData.interviewType,
         sessionInterval: formData.sessionInterval ? Number(formData.sessionInterval) : undefined, // Ensure type matches backend expectation

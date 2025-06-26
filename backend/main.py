@@ -1,28 +1,27 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from backend.routes import auth, resume, sessions, metrics,logout
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from backend.routes import auth, resume, sessions, metrics, logout
+
 app = FastAPI(title="InterviewBot API")
 
-# CORS setup
+# CORS configuration
 origins = [
-    "http://localhost:8080",  # Your React frontend origin
-    # Add more allowed origins if needed
+    "http://localhost:8080",  # React frontend local dev
+    # Add production frontend domains here when ready
 ]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,          # Allow these origins
+    allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],            # Allow all HTTP methods (GET, POST, etc)
-    allow_headers=["*"],            # Allow all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-# API version prefix - can be adjusted as needed
-API_PREFIX = "/api/v1"
-
+# Exception handler for validation errors
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     return JSONResponse(
@@ -30,13 +29,17 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         content={"detail": exc.errors(), "body": exc.body},
     )
 
-# Include routers with consistent prefix
+# API versioning prefix
+API_PREFIX = "/api/v1"
+
+# Register routers
 app.include_router(auth.router, prefix=f"{API_PREFIX}/auth", tags=["Authentication"])
 app.include_router(resume.router, prefix=f"{API_PREFIX}/resume", tags=["Resume"])
-app.include_router(logout.router, prefix=f"{API_PREFIX}/logging", tags=["logout"])
+app.include_router(logout.router, prefix=f"{API_PREFIX}/logging", tags=["Logout"])
 app.include_router(sessions.router, prefix=f"{API_PREFIX}/sessions", tags=["Sessions"])
 app.include_router(metrics.router, prefix=f"{API_PREFIX}/metrics", tags=["Metrics"])
 
+# Run the app
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("backend.main:app", host="127.0.0.1", port=8000, reload=True)

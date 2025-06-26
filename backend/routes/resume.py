@@ -16,10 +16,10 @@ router = APIRouter()
 class ResumeAnalysisRequest(BaseModel):
     targetRole: str
     targetCompany: str
-    yearsOfExperience: str
+    yearsOfExperience: int
     currentDesignation: str
     interviewType: str
-    sessionInterval: str | None = None
+    sessionInterval: int | None = None
 
 @router.get("/resume/{user_email}")
 async def get_resume(user_email: str):

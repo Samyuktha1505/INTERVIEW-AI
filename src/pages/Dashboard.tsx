@@ -154,9 +154,61 @@ const validatePassword = (password: string) => {
 
       {/* Mobile Sidebar */}
       <Sheet open={isSidebarOpen} onOpenChange={setIsSidebarOpen}>
-        <SheetContent />
-        {isSidebarOpen && sidebarContent}
-      </Sheet>
+  <SheetContent side="left">
+    <div className="h-full flex flex-col">
+      <div className="p-6 border-b">
+        <h2 className="text-xl font-bold text-primary">InterviewAI</h2>
+      </div>
+      <nav className="flex-1 p-6">
+        <div className="space-y-2">
+          <Button className="w-full justify-start" onClick={() => setIsSidebarOpen(false)}>
+            <User className="mr-2 h-4 w-4" />
+            Dashboard
+          </Button>
+          <Button className="w-full justify-start" onClick={() => setIsSidebarOpen(false)}>
+            <Video className="mr-2 h-4 w-4" />
+            Interviews
+          </Button>
+        </div>
+        <div className="mt-3">
+          <Link to="/profile">
+            <Button className="w-full justify-start" onClick={() => setIsSidebarOpen(false)}>
+              <Settings className="mr-2 h-4 w-4" />
+              Edit Profile
+            </Button>
+          </Link>
+        </div>
+      </nav>
+      <div className="p-6 border-t">
+        <div className="flex items-center space-x-3 mb-4">
+          <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center">
+            <User className="h-4 w-4 text-primary-foreground" />
+          </div>
+          <div>
+            <p className="text-sm font-medium">{user?.firstName} {user?.lastName}</p>
+            <p className="text-xs text-muted-foreground">{user?.email}</p>
+          </div>
+        </div>
+        <Button 
+  className="w-full mb-2" 
+  onClick={() => {
+    setIsSidebarOpen(false); // 👈 close sidebar
+    setShowResetPassword(true); // 👈 open reset modal
+  }}
+>
+  <Settings className="mr-2 h-4 w-4" />
+  Reset Password
+</Button>
+
+        <Button className="w-full" onClick={handleLogout}>
+          <LogOut className="mr-2 h-4 w-4" />
+          Logout
+        </Button>
+      </div>
+    </div>
+  </SheetContent>
+</Sheet>
+
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col">
