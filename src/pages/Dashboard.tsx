@@ -435,6 +435,7 @@ const validatePassword = (password: string) => {
               const res = await fetch("http://localhost:8000/api/v1/auth/reset-password", {
                     method: "POST",
                     body: formData,
+                    credentials: "include", 
               });
 
               

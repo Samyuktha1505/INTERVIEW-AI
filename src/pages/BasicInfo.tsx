@@ -15,37 +15,48 @@ import { format } from "date-fns";
 import { DayPicker } from 'react-day-picker';
 import 'react-day-picker/dist/style.css';
 
-
 interface BasicInfoForm {
   firstName: string;
   lastName: string;
   gender: string;
   dateOfBirth?: Date;
   collegeName: string;
-  yearsOfExperience: number;
+  yearsOfExperience: number | null;
   resumeFile: File | null;
+  countryCode: string;
+  mobile: string;
 }
 
 const BasicInfo = () => {
+  const { updateProfile, user } = useAuth();
+  const navigate = useNavigate();
+
   const [formData, setFormData] = useState<BasicInfoForm>({
     firstName: '',
     lastName: '',
     gender: '',
     dateOfBirth: undefined,
     collegeName: '',
-    yearsOfExperience: 0,
-    resumeFile: null
+    yearsOfExperience: null,
+    resumeFile: null,
+    countryCode: '',
+    mobile: user?.mobile || '',
   });
 
   const [isLoading, setIsLoading] = useState(false);
-  const { updateProfile, user } = useAuth();
-  const navigate = useNavigate();
 
   useEffect(() => {
     if (user?.isProfileComplete) {
       navigate('/dashboard');
     }
   }, [user, navigate]);
+
+  // Optional: update mobile if user changes (e.g. from async fetch)
+  useEffect(() => {
+    if (user?.mobile) {
+      setFormData(prev => ({ ...prev, mobile: user.mobile }));
+    }
+  }, [user]);
 
   const handleInputChange = (field: keyof BasicInfoForm, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -54,7 +65,11 @@ const BasicInfo = () => {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const allowedMimes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+      const allowedMimes = [
+        'application/pdf',
+        'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      ];
       if (allowedMimes.includes(file.type)) {
         setFormData(prev => ({ ...prev, resumeFile: file }));
       } else {
@@ -69,11 +84,34 @@ const BasicInfo = () => {
   };
 
   const validateForm = () => {
-    const { firstName, lastName, gender, dateOfBirth, collegeName } = formData;
-    if (!firstName.trim() || !lastName.trim() || !gender || !dateOfBirth || !collegeName.trim()) {
+    const {
+      firstName,
+      lastName,
+      gender,
+      dateOfBirth,
+      collegeName,
+      yearsOfExperience,
+      resumeFile,
+      countryCode,
+      mobile,
+    } = formData;
+
+    if (
+      !firstName.trim() ||
+      !lastName.trim() ||
+      !gender ||
+      !dateOfBirth ||
+      !collegeName.trim() ||
+      yearsOfExperience === null ||
+      isNaN(yearsOfExperience) ||
+      yearsOfExperience < 0 ||
+      resumeFile === null ||
+      !countryCode.trim() ||
+      !mobile.trim()
+    ) {
       toast({
         title: "Validation Error",
-        description: "Please fill in all required fields.",
+        description: "Please fill in all required fields correctly.",
         variant: "destructive",
       });
       return false;
@@ -94,26 +132,25 @@ const BasicInfo = () => {
           description: "User email not found. Please log in again.",
           variant: "destructive",
         });
+        setIsLoading(false);
         return;
       }
 
-      const payload = {
-        firstName: formData.firstName,
-        lastName: formData.lastName,
-        gender: formData.gender,
-        dateOfBirth: formData.dateOfBirth ? format(formData.dateOfBirth, 'yyyy-MM-dd') : "",
-        collegeName: formData.collegeName,
-        yearsOfExperience: formData.yearsOfExperience,
-        mobile: user?.mobile || ""
-      };
+      const formDataToSend = new FormData();
+      formDataToSend.append("firstName", formData.firstName);
+      formDataToSend.append("lastName", formData.lastName);
+      formDataToSend.append("gender", formData.gender);
+      formDataToSend.append("dateOfBirth", formData.dateOfBirth ? format(formData.dateOfBirth, 'yyyy-MM-dd') : "");
+      formDataToSend.append("collegeName", formData.collegeName);
+      formDataToSend.append("yearsOfExperience", formData.yearsOfExperience!.toString());
+      formDataToSend.append("countryCode", formData.countryCode);
+      formDataToSend.append("mobile", formData.mobile);
+      formDataToSend.append("resumeFile", formData.resumeFile!);
 
       const response = await fetch("http://localhost:8000/api/v1/auth/basic-info", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        body: formDataToSend,
         credentials: "include",
-        body: JSON.stringify(payload),
       });
 
       const result = await response.json();
@@ -122,7 +159,7 @@ const BasicInfo = () => {
         updateProfile({
           ...formData,
           dateOfBirth: format(formData.dateOfBirth!, 'yyyy-MM-dd'),
-          isProfileComplete: true
+          isProfileComplete: true,
         });
 
         toast({
@@ -134,13 +171,12 @@ const BasicInfo = () => {
       } else {
         throw new Error(result.error || result.message || "Profile update failed.");
       }
-
     } catch (error) {
       console.error("Submission error:", error);
       toast({
         title: "Error",
         description: `Something went wrong: ${error instanceof Error ? error.message : "Unknown error"}`,
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setIsLoading(false);
@@ -158,6 +194,8 @@ const BasicInfo = () => {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
+
+            {/* Name Fields */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="firstName">First Name *</Label>
@@ -181,6 +219,7 @@ const BasicInfo = () => {
               </div>
             </div>
 
+            {/* Gender */}
             <div className="space-y-2">
               <Label>Gender *</Label>
               <RadioGroup
@@ -203,6 +242,7 @@ const BasicInfo = () => {
               </RadioGroup>
             </div>
 
+            {/* Date of Birth */}
             <div className="space-y-2">
               <Label>Date of Birth *</Label>
               <Popover>
@@ -212,6 +252,7 @@ const BasicInfo = () => {
                       "w-full justify-start text-left font-normal",
                       !formData.dateOfBirth && "text-muted-foreground"
                     )}
+                    type="button"
                   >
                     <CalendarIcon className="mr-2 h-4 w-4" />
                     {formData.dateOfBirth ? format(formData.dateOfBirth, "PPP") : "Pick a date"}
@@ -230,6 +271,7 @@ const BasicInfo = () => {
               </Popover>
             </div>
 
+            {/* College Name */}
             <div className="space-y-2">
               <Label htmlFor="collegeName">College Name *</Label>
               <Input
@@ -241,10 +283,50 @@ const BasicInfo = () => {
               />
             </div>
 
+            {/* Country Code */}
             <div className="space-y-2">
-              <Label>Years of Experience</Label>
+              <Label>Country Code *</Label>
               <Select
-                value={formData.yearsOfExperience.toString()}
+                value={formData.countryCode}
+                onValueChange={(value) => handleInputChange('countryCode', value)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select country code" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="+1">🇺🇸 +1 (USA/Canada)</SelectItem>
+                  <SelectItem value="+44">🇬🇧 +44 (UK)</SelectItem>
+                  <SelectItem value="+91">🇮🇳 +91 (India)</SelectItem>
+                  <SelectItem value="+49">🇩🇪 +49 (Germany)</SelectItem>
+                  <SelectItem value="+33">🇫🇷 +33 (France)</SelectItem>
+                  <SelectItem value="+81">🇯🇵 +81 (Japan)</SelectItem>
+                  <SelectItem value="+86">🇨🇳 +86 (China)</SelectItem>
+                  <SelectItem value="+61">🇦🇺 +61 (Australia)</SelectItem>
+                  <SelectItem value="+52">🇲🇽 +52 (Mexico)</SelectItem>
+                  <SelectItem value="+55">🇧🇷 +55 (Brazil)</SelectItem>
+                  <SelectItem value="+7">🇷🇺 +7 (Russia)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Mobile Number */}
+            <div className="space-y-2">
+              <Label htmlFor="mobile">Mobile Number *</Label>
+              <Input
+                id="mobile"
+                type="tel"
+                placeholder="Enter your mobile number"
+                value={formData.mobile}
+                onChange={(e) => handleInputChange('mobile', e.target.value)}
+                required
+              />
+            </div>
+
+            {/* Years of Experience */}
+            <div className="space-y-2">
+              <Label>Years of Experience *</Label>
+              <Select
+                value={formData.yearsOfExperience !== null ? formData.yearsOfExperience.toString() : ""}
                 onValueChange={(value) => handleInputChange('yearsOfExperience', parseInt(value))}
               >
                 <SelectTrigger>
@@ -261,8 +343,9 @@ const BasicInfo = () => {
               </Select>
             </div>
 
+            {/* Resume Upload */}
             <div className="space-y-2">
-              <Label htmlFor="resume">Resume Upload</Label>
+              <Label htmlFor="resume">Resume Upload *</Label>
               <div className="relative">
                 <Input
                   id="resume"
@@ -270,6 +353,7 @@ const BasicInfo = () => {
                   accept=".pdf,.doc,.docx"
                   onChange={handleFileChange}
                   className="hidden"
+                  required
                 />
                 <Label
                   htmlFor="resume"

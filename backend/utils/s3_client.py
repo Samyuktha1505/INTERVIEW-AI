@@ -1,12 +1,12 @@
 import boto3
 import os
-import uuid
-from datetime import datetime
 from pathlib import Path
 from fastapi import HTTPException
 from dotenv import load_dotenv
+from datetime import datetime
+import uuid
 
-# Load environment variables from .env
+# Load environment variables
 env_path = Path(__file__).parent.parent / '.env'
 load_dotenv(dotenv_path=env_path)
 
@@ -20,28 +20,11 @@ class S3Client:
         )
         self.bucket = os.getenv('AWS_BUCKET_NAME')
 
-    def get_resume_from_s3(self, user_email: str) -> str:
-        """Retrieve the latest resume text for a user from S3"""
-        try:
-            res = self.s3.list_objects_v2(
-                Bucket=self.bucket,
-                Prefix=f"users/{user_email}/resumes/"
-            )
-
-            if not res.get('Contents'):
-                raise HTTPException(status_code=404, detail="No resume found for this user")
-
-            latest_resume = max(res['Contents'], key=lambda x: x['LastModified'])
-
-            obj = self.s3.get_object(Bucket=self.bucket, Key=latest_resume['Key'])
-            return obj['Body'].read().decode('utf-8')
-
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to retrieve resume from S3: {str(e)}")
-
     def upload_resume(self, user_id: str, file_bytes: bytes, content_type: str = 'application/pdf') -> dict:
-        """Upload resume to S3 with metadata"""
+        """Upload resume to S3 and delete old versions"""
         try:
+            self._delete_old_resumes(user_id)
+
             resume_id = f"resume_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
             s3_key = f"users/{user_id}/resumes/{resume_id}.pdf"
 
@@ -62,10 +45,45 @@ class S3Client:
                 'resume_id': resume_id,
                 'url': f"https://{self.bucket}.s3.amazonaws.com/{s3_key}"
             }
-
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"S3 Upload Error: {str(e)}")
 
+    def _delete_old_resumes(self, user_id: str):
+        """Delete all previous resumes for a user"""
+        try:
+            objects = self.s3.list_objects_v2(
+                Bucket=self.bucket,
+                Prefix=f"users/{user_id}/resumes/"
+            )
 
-# ✅ Singleton instance to reuse across app
+            if 'Contents' in objects:
+                delete_keys = [{'Key': obj['Key']} for obj in objects['Contents']]
+                self.s3.delete_objects(
+                    Bucket=self.bucket,
+                    Delete={'Objects': delete_keys}
+                )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"S3 Delete Error: {str(e)}")
+
+    def get_resume_from_s3(self, user_id: str) -> bytes:
+        """Get the latest resume for a user by user_id"""
+        try:
+            objects = self.s3.list_objects_v2(
+                Bucket=self.bucket,
+                Prefix=f"users/{user_id}/resumes/"
+            )
+
+            if not objects.get('Contents'):
+                raise HTTPException(status_code=404, detail="No resume found for this user")
+
+            latest_resume = max(objects['Contents'], key=lambda x: x['LastModified'])
+            obj = self.s3.get_object(Bucket=self.bucket, Key=latest_resume['Key'])
+            return obj['Body'].read()  # Return raw bytes here
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to retrieve resume: {str(e)}")
+
+# Singleton instance
 s3_client = S3Client()

@@ -9,7 +9,9 @@ app = FastAPI(title="InterviewBot API")
 
 # CORS configuration
 origins = [
-    "http://localhost:8080",  # React frontend local dev
+    "http://localhost:8080", 
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",# React frontend local dev
     # Add production frontend domains here when ready
 ]
 
@@ -24,9 +26,23 @@ app.add_middleware(
 # Exception handler for validation errors
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    body = exc.body
+
+    # Replace non-serializable FormData or file-like objects with a placeholder string
+    # You can check if it's a dict (JSON) or some other type
+    # Usually FormData will have a `read` method or be an instance of starlette.datastructures.FormData
+    try:
+        import starlette.datastructures
+        if isinstance(body, starlette.datastructures.FormData):
+            body = "<form-data>"
+    except ImportError:
+        # fallback check
+        if hasattr(body, "read"):
+            body = "<form-data>"
+
     return JSONResponse(
         status_code=422,
-        content={"detail": exc.errors(), "body": exc.body},
+        content={"detail": exc.errors(), "body": body},
     )
 
 # API versioning prefix

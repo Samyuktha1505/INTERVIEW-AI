@@ -51,6 +51,7 @@
     "dotenv-flow": "^4.1.0",
     "embla-carousel-react": "^8.3.0",
     "eventemitter3": "^5.0.1",
+    "i": "^0.3.7",
     "input-otp": "^1.2.4",
     "jwt-decode": "^4.0.0",
     "lodash": "^4.17.21",

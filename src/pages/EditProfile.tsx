@@ -1,35 +1,57 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { toast } from "@/hooks/use-toast";
-import { Upload, CalendarIcon, ArrowLeft } from "lucide-react"; // Import ArrowLeft icon
+import { Upload, CalendarIcon, ArrowLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
-import { DayPicker } from 'react-day-picker';
-import 'react-day-picker/dist/style.css';
+import { DayPicker } from "react-day-picker";
+import "react-day-picker/dist/style.css";
 
-const EditProfile = () => {
+const EditProfile: React.FC = () => {
   const { user, updateProfile } = useAuth();
   const navigate = useNavigate();
 
-  // State to hold all form data, including the resume file and phone
-  const [formData, setFormData] = useState({
-    firstName: '',
-    lastName: '',
-    gender: '',
-    dateOfBirth: undefined as Date | undefined,
-    collegeName: '',
+  // Form data state
+  const [formData, setFormData] = useState<{
+    firstName: string;
+    lastName: string;
+    gender: string;
+    dateOfBirth?: Date;
+    collegeName: string;
+    yearsOfExperience: number;
+    resumeFile: File | null;
+    countryCode: string;
+    phoneNumber: string;
+  }>({
+    firstName: "",
+    lastName: "",
+    gender: "",
+    dateOfBirth: undefined,
+    collegeName: "",
     yearsOfExperience: 0,
-    resumeFile: null as File | null,
-    countryCode: '+91', // Restore countryCode in state initialization
-    phoneNumber: ''
+    resumeFile: null,
+    countryCode: "+91",
+    phoneNumber: "",
   });
 
   const [isLoading, setIsLoading] = useState(true);
@@ -37,91 +59,100 @@ const EditProfile = () => {
 
   useEffect(() => {
     const fetchUserData = async () => {
-      if (user?.email) {
-        setIsLoading(true);
-        try {
-          const response = await fetch(`http://localhost:8000/user-profile?email=${user.email}`);
-          const data = await response.json();
-
-          if (response.ok && data.success) {
-            const userData = data.user;
-
-            let dob: Date | undefined;
-            if (userData.date_of_birth) {
-              const parsedDate = new Date(userData.date_of_birth);
-              if (!isNaN(parsedDate.getTime())) {
-                dob = parsedDate;
-              } else {
-                console.warn("Invalid date_of_birth received from backend:", userData.date_of_birth);
-                toast({
-                  title: "Date Format Warning",
-                  description: "Received an invalid date of birth from the server. Please re-enter.",
-                  variant: "warning",
-                });
-                dob = undefined;
-              }
-            }
-
-            setFormData({
-              firstName: userData.first_name || '',
-              lastName: userData.last_name || '',
-              gender: userData.gender || '',
-              dateOfBirth: dob,
-              collegeName: userData.college_name || '',
-              yearsOfExperience: userData.years_of_experience || 0,
-              resumeFile: null,
-              countryCode: userData.country_code || '+91',
-              phoneNumber: userData.mobile || ''
-            });
-            setCurrentResumeUrl(userData.resume_url || null);
-          } else {
-            toast({
-              title: "UPDATE",
-              description: data.message || "You can now edit the profile .",
-              variant: "success",
-            });
-          }
-        } catch (error) {
-          console.error("Failed to fetch user data:", error);
-          toast({
-            title: "UPDATE", // Reverted this toast message
-            description: "YOU CAN NOW UPDATE YOUR PROFILE.", // Reverted this toast message
-            variant: "success",
-          });
-        } finally {
-          setIsLoading(false);
-        }
-      } else {
+      if (!user?.email) {
         toast({
-            title: "Authentication Required",
-            description: "Please log in to edit your profile.",
-            variant: "destructive"
+          title: "Authentication Required",
+          description: "Please log in to edit your profile.",
+          variant: "destructive",
         });
-        navigate('/login');
+        navigate("/login");
+        return;
+      }
+
+      setIsLoading(true);
+
+      try {
+        const response = await fetch("http://localhost:8000/api/v1/auth/user-profile", {
+          method: "GET",
+          credentials: "include",
+        });
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+          const userData = data.user;
+
+          let dob: Date | undefined = undefined;
+          if (userData.date_of_birth) {
+            const parsedDate = new Date(userData.date_of_birth);
+            if (!isNaN(parsedDate.getTime())) {
+              dob = parsedDate;
+            } else {
+              toast({
+                title: "Date Format Warning",
+                description:
+                  "Received an invalid date of birth from the server. Please re-enter.",
+                variant: "warning",
+              });
+            }
+          }
+
+          setFormData({
+            firstName: userData.first_name || "",
+            lastName: userData.last_name || "",
+            gender: userData.gender || "",
+            dateOfBirth: dob,
+            collegeName: userData.college_name || "",
+            yearsOfExperience: userData.years_of_experience ?? 0,
+            resumeFile: null,
+            countryCode: userData.country_code || "+91",
+            phoneNumber: userData.mobile || "",
+          });
+
+          setCurrentResumeUrl(userData.resume_url || null);
+        } else {
+          toast({
+            title: "Fetch Failed",
+            description: data.message || "Failed to fetch user profile data.",
+            variant: "destructive",
+          });
+        }
+      } catch (error) {
+        console.error("Failed to fetch user data:", error);
+        toast({
+          title: "Error",
+          description: "Failed to load user profile. Please try again later.",
+          variant: "destructive",
+        });
+      } finally {
+        setIsLoading(false);
       }
     };
 
     fetchUserData();
   }, [user?.email, navigate]);
 
-  const handleInputChange = (field: string, value: any) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+  const handleInputChange = (field: keyof typeof formData, value: any) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const allowedMimes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
-      if (allowedMimes.includes(file.type)) {
-        setFormData(prev => ({ ...prev, resumeFile: file }));
-      } else {
+      const allowedMimes = [
+        "application/pdf",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      ];
+      if (!allowedMimes.includes(file.type)) {
         toast({
           title: "Invalid file type",
           description: "Please upload a PDF, DOC, or DOCX file.",
           variant: "destructive",
         });
-        e.target.value = '';
+        e.target.value = ""; // reset input
+        return;
       }
+      setFormData((prev) => ({ ...prev, resumeFile: file }));
     }
   };
 
@@ -133,15 +164,18 @@ const EditProfile = () => {
       !formData.dateOfBirth ||
       !formData.collegeName.trim() ||
       !formData.countryCode ||
-      !formData.phoneNumber.trim()
+      !formData.phoneNumber.trim() ||
+      !formData.resumeFile // enforce resume re-upload
     ) {
       toast({
         title: "Validation Error",
-        description: "Please fill in all required fields.",
+        description:
+          "Please fill in all required fields and upload your resume.",
         variant: "destructive",
       });
       return false;
     }
+
     if (formData.dateOfBirth > new Date()) {
       toast({
         title: "Validation Error",
@@ -155,6 +189,7 @@ const EditProfile = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
     if (!validateForm()) return;
 
     setIsLoading(true);
@@ -172,23 +207,31 @@ const EditProfile = () => {
       }
 
       const form = new FormData();
-      form.append("email", email);
-      form.append("phone", formData.phoneNumber);
-      form.append("first_name", formData.firstName);
-      form.append("last_name", formData.lastName);
+      // Note: backend expects these exact keys:
+      form.append("firstName", formData.firstName);
+      form.append("lastName", formData.lastName);
+      form.append("mobile", formData.phoneNumber);
       form.append("gender", formData.gender);
-      form.append("date_of_birth", formData.dateOfBirth ? format(formData.dateOfBirth, 'yyyy-MM-dd') : "");
-      form.append("college_name", formData.collegeName);
-      form.append("years_of_experience", formData.yearsOfExperience.toString());
-      form.append("country_code", formData.countryCode);
+      form.append(
+        "dateOfBirth",
+        formData.dateOfBirth ? format(formData.dateOfBirth, "yyyy-MM-dd") : ""
+      );
+      form.append("collegeName", formData.collegeName);
+      form.append("yearsOfExperience", formData.yearsOfExperience.toString());
+      form.append("countryCode", formData.countryCode);
+
       if (formData.resumeFile) {
-        form.append("resume", formData.resumeFile);
+        form.append("resumeFile", formData.resumeFile);
       }
 
-      const response = await fetch("http://localhost:8000/basic-info", {
-        method: "POST",
-        body: form,
-      });
+      const response = await fetch(
+        "http://localhost:8000/api/v1/auth/basic-info",
+        {
+          method: "POST",
+          body: form,
+          credentials: "include",
+        }
+      );
 
       const result = await response.json();
 
@@ -198,7 +241,9 @@ const EditProfile = () => {
           firstName: formData.firstName,
           lastName: formData.lastName,
           gender: formData.gender,
-          dateOfBirth: formData.dateOfBirth ? format(formData.dateOfBirth, 'yyyy-MM-dd') : "",
+          dateOfBirth: formData.dateOfBirth
+            ? format(formData.dateOfBirth, "yyyy-MM-dd")
+            : "",
           collegeName: formData.collegeName,
           yearsOfExperience: formData.yearsOfExperience,
           countryCode: formData.countryCode,
@@ -207,21 +252,23 @@ const EditProfile = () => {
 
         toast({
           title: "Profile updated successfully",
-          description: "Your changes have been saved."
+          description: "Your changes have been saved.",
         });
 
-        navigate('/dashboard');
+        navigate("/dashboard");
       } else {
-        const errorMessage = result.error || result.message || "Failed to update profile. Please try again.";
+        const errorMessage =
+          result.error || result.message || "Failed to update profile.";
         throw new Error(errorMessage);
       }
-
     } catch (error) {
       console.error("Submission error:", error);
       toast({
         title: "Error",
-        description: `Something went wrong: ${error instanceof Error ? error.message : "An unknown error occurred."}`,
-        variant: "destructive"
+        description: `Something went wrong: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`,
+        variant: "destructive",
       });
     } finally {
       setIsLoading(false);
@@ -232,7 +279,7 @@ const EditProfile = () => {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background to-secondary p-4">
         <Card className="w-full max-w-2xl text-center p-8">
-          <p className="text-lg">UPDATING THE DETIALS</p>
+          <p className="text-lg">UPDATING THE DETAILS...</p>
         </Card>
       </div>
     );
@@ -242,25 +289,27 @@ const EditProfile = () => {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background to-secondary p-4">
       <Card className="w-full max-w-2xl">
         <CardHeader className="space-y-1">
-          <div className="flex items-center justify-between"> {/* Flex container for button and title */}
+          <div className="flex items-center justify-between">
             <Button
-              variant="ghost" // Use a ghost variant for a subtle back button
-              onClick={() => navigate('/dashboard')}
+              variant="ghost"
+              onClick={() => navigate("/dashboard")}
               className="flex items-center gap-1 transition-all duration-300 hover:scale-105"
             >
               <ArrowLeft className="h-4 w-4" />
               Back
             </Button>
-            <CardTitle className="text-2xl font-bold text-center flex-grow">Edit Your Profile</CardTitle> {/* flex-grow to center title */}
-            <div></div> {/* Empty div to balance spacing if needed */}
+            <CardTitle className="text-2xl font-bold text-center flex-grow">
+              Edit Your Profile
+            </CardTitle>
+            <div />
           </div>
           <CardDescription className="text-center">
             Update your personal and academic information
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {/* First Name & Last Name */}
+          <form onSubmit={handleSubmit} className="space-y-6" noValidate>
+            {/* First & Last Name */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="firstName">First Name *</Label>
@@ -268,7 +317,9 @@ const EditProfile = () => {
                   id="firstName"
                   placeholder="Enter your first name"
                   value={formData.firstName}
-                  onChange={(e) => handleInputChange('firstName', e.target.value)}
+                  onChange={(e) =>
+                    handleInputChange("firstName", e.target.value)
+                  }
                   required
                   className="transition-all duration-300 focus:scale-105"
                 />
@@ -279,20 +330,24 @@ const EditProfile = () => {
                   id="lastName"
                   placeholder="Enter your last name"
                   value={formData.lastName}
-                  onChange={(e) => handleInputChange('lastName', e.target.value)}
+                  onChange={(e) =>
+                    handleInputChange("lastName", e.target.value)
+                  }
                   required
                   className="transition-all duration-300 focus:scale-105"
                 />
               </div>
             </div>
 
-            {/* Country Code & Phone Number - RESTORED */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4"> {/* Grouping these */}
+            {/* Country Code & Phone Number */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="countryCode">Country Code *</Label>
                 <Select
                   value={formData.countryCode}
-                  onValueChange={(value) => handleInputChange('countryCode', value)}
+                  onValueChange={(value) =>
+                    handleInputChange("countryCode", value)
+                  }
                 >
                   <SelectTrigger className="transition-all duration-300 hover:scale-105">
                     <SelectValue placeholder="Select country code" />
@@ -319,7 +374,9 @@ const EditProfile = () => {
                   type="tel"
                   placeholder="Enter your phone number"
                   value={formData.phoneNumber}
-                  onChange={(e) => handleInputChange('phoneNumber', e.target.value)}
+                  onChange={(e) =>
+                    handleInputChange("phoneNumber", e.target.value)
+                  }
                   required
                   className="transition-all duration-300 focus:scale-105"
                 />
@@ -331,7 +388,7 @@ const EditProfile = () => {
               <Label>Gender *</Label>
               <RadioGroup
                 value={formData.gender}
-                onValueChange={(value) => handleInputChange('gender', value)}
+                onValueChange={(value) => handleInputChange("gender", value)}
                 className="flex flex-row space-x-6"
               >
                 <div className="flex items-center space-x-2">
@@ -361,14 +418,16 @@ const EditProfile = () => {
                     )}
                   >
                     <CalendarIcon className="mr-2 h-4 w-4" />
-                    {formData.dateOfBirth ? format(formData.dateOfBirth, "PPP") : "Pick a date"}
+                    {formData.dateOfBirth
+                      ? format(formData.dateOfBirth, "PPP")
+                      : "Pick a date"}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0">
                   <DayPicker
                     mode="single"
                     selected={formData.dateOfBirth}
-                    onSelect={(date) => handleInputChange('dateOfBirth', date)}
+                    onSelect={(date) => handleInputChange("dateOfBirth", date)}
                     captionLayout="dropdown"
                     fromYear={1970}
                     toYear={new Date().getFullYear()}
@@ -384,7 +443,7 @@ const EditProfile = () => {
                 id="collegeName"
                 placeholder="Enter your college/university name"
                 value={formData.collegeName}
-                onChange={(e) => handleInputChange('collegeName', e.target.value)}
+                onChange={(e) => handleInputChange("collegeName", e.target.value)}
                 required
                 className="transition-all duration-300 focus:scale-105"
               />
@@ -395,7 +454,9 @@ const EditProfile = () => {
               <Label>Years of Experience</Label>
               <Select
                 value={formData.yearsOfExperience.toString()}
-                onValueChange={(value) => handleInputChange('yearsOfExperience', parseInt(value))}
+                onValueChange={(value) =>
+                  handleInputChange("yearsOfExperience", parseInt(value))
+                }
               >
                 <SelectTrigger className="transition-all duration-300 hover:scale-105">
                   <SelectValue placeholder="Select years of experience" />
@@ -411,9 +472,9 @@ const EditProfile = () => {
               </Select>
             </div>
 
-            {/* Resume Upload Section */}
+            {/* Resume Upload */}
             <div className="space-y-2">
-              <Label htmlFor="resume">Resume Upload</Label>
+              <Label htmlFor="resume">Resume Upload *</Label>
               <div className="relative">
                 <Input
                   id="resume"
@@ -429,18 +490,28 @@ const EditProfile = () => {
                   <div className="text-center">
                     <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
                     <p className="text-sm text-muted-foreground">
-                      {formData.resumeFile ? formData.resumeFile.name : "Click to upload/update resume (PDF/DOC/DOCX)"}
+                      {formData.resumeFile
+                        ? formData.resumeFile.name
+                        : "Click to upload/update resume (PDF/DOC/DOCX)"}
                     </p>
                   </div>
                 </Label>
               </div>
               {currentResumeUrl && (
                 <p className="text-xs text-muted-foreground mt-1">
-                  Current resume: <a href={currentResumeUrl} target="_blank" rel="noopener noreferrer" className="underline hover:text-primary">View Current Resume</a>
+                  Current resume:{" "}
+                  <a
+                    href={currentResumeUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline hover:text-primary"
+                  >
+                    View Current Resume
+                  </a>
                 </p>
               )}
               <p className="text-xs text-muted-foreground mt-1">
-                 Uploading a new resume will replace the old one.
+                Uploading a new resume will replace the old one.
               </p>
             </div>
 

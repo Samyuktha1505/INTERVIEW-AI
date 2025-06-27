@@ -69,7 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(data.user);
       }
     } catch {
-      // Do nothing — user not logged in
+      // User not logged in or other error — ignore here
     } finally {
       setIsLoading(false);
     }
@@ -80,22 +80,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [initializeAuth]);
 
   const handleResponseError = async (response: Response) => {
-  if (!response.ok) {
-    try {
-      const contentType = response.headers.get("Content-Type");
-      if (contentType?.includes("application/json")) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || response.statusText);
-      } else {
-        const text = await response.text();
-        throw new Error(text || response.statusText);
+    if (!response.ok) {
+      try {
+        const contentType = response.headers.get("Content-Type");
+        if (contentType?.includes("application/json")) {
+          const errorData = await response.json();
+          throw new Error(errorData.detail || response.statusText);
+        } else {
+          const text = await response.text();
+          throw new Error(text || response.statusText);
+        }
+      } catch {
+        throw new Error("Unexpected error occurred.");
       }
-    } catch (err) {
-      throw new Error("Unexpected error occurred.");
     }
-  }
-};
-
+  };
 
   const login = async (email: string, password: string) => {
     setIsLoading(true);
@@ -159,28 +158,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = async () => {
-  try {
-    await fetch(`/api/v1/logging/logout`, {
-      method: "POST",
-      credentials: "include",
-    });
-  } catch (err) {
-    console.warn("Logout request failed:", err);
-  } finally {
-    setUser(null);
-    setError(null);
-  }
-};
-
+    try {
+      await fetch(`/api/v1/logging/logout`, {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch (err) {
+      console.warn("Logout request failed:", err);
+    } finally {
+      setUser(null);
+      setError(null);
+    }
+  };
 
   const updateProfile = (profileData: Partial<User>) => {
     if (!user) return;
-    setUser(prev => prev ? { ...prev, ...profileData } : null);
+    setUser((prev) => (prev ? { ...prev, ...profileData } : null));
   };
 
   const loginWithGoogle = async (credential: string) => {
+    console.log("loginWithGoogle called with credential:", credential);
     setIsLoading(true);
     setError(null);
+
+    if (!credential) {
+      setError("No credential provided");
+      setIsLoading(false);
+      return;
+    }
+
     try {
       const response = await fetch(`${BASE_AUTH_URL}/google-auth-login`, {
         method: "POST",
@@ -189,16 +195,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         credentials: "include",
       });
 
+      console.log("Response status:", response.status);
       await handleResponseError(response);
+
       const data = await response.json();
+      console.log("Backend response data:", data);
 
       setUser({
         id: data.user_id.toString(),
         email: data.email,
         isProfileComplete: data.isProfileComplete || true,
       });
-      setAccessToken(data.access_token); // Optional — you're not using it directly
+      setAccessToken(data.token || null);
     } catch (err) {
+      console.error("Google login error:", err);
       setError(err instanceof Error ? err.message : "Google login failed");
       throw err;
     } finally {

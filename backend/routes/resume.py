@@ -1,14 +1,14 @@
 from fastapi import Depends, HTTPException, status, APIRouter, Body, Request
 from fastapi.responses import JSONResponse
-from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel
 from backend.utils.jwt_auth import get_current_user
 from backend.utils.prompts import llm1_prompt
-from backend.config import MODEL_ID
+from backend.config import MODEL_ID, GEMINI_API_KEY
 from backend.utils.s3_client import s3_client
 from backend.db.mysql import get_db_connection
 from backend.utils.functions import process_and_extract_json_data
-from google import genai
+import google.generativeai as genai
+import fitz
 import datetime, json, logging, uuid
 
 router = APIRouter()
@@ -21,34 +21,50 @@ class ResumeAnalysisRequest(BaseModel):
     interviewType: str
     sessionInterval: int | None = None
 
-@router.get("/resume/{user_email}")
-async def get_resume(user_email: str):
+@router.get("/resume/{user_id}")
+async def get_resume(user_id: str, current_user: dict = Depends(get_current_user)):
     try:
-        resume_text = s3_client.get_resume_from_s3(user_email)
+        if str(current_user.get("user_id")) != user_id:
+            raise HTTPException(status_code=403, detail="Cannot access another user's resume")
+
+        resume_text = s3_client.get_resume_from_s3(user_id)
+        # Extract text from PDF bytes
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        text = ""
+        for page in doc:
+            text += page.get_text()
+
+        return JSONResponse(content={"resume_text": text})
         return JSONResponse(content={"resume_text": resume_text})
     except HTTPException as e:
         raise e
     except Exception as e:
-        logging.error(f"Error fetching resume from S3 for user {user_email}: {e}", exc_info=True)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Internal server error: {e}")
+        logging.error(f"Error fetching resume: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.post("/analyze_resume")
 async def analyze_resume(
+    request: Request,
     payload: ResumeAnalysisRequest = Body(...),
     current_user: dict = Depends(get_current_user)
 ):
-    user_id_from_token = current_user.get("user_id")
-    user_email_from_token = current_user.get("email")
+    user_id = current_user.get("user_id")
+    user_email = current_user.get("email")
 
     db_conn = None
     cursor = None
     session_id = str(uuid.uuid4())
 
     try:
-        logging.info(f"[{datetime.datetime.now()}] Received /analyze_resume/ request for user: {user_email_from_token}")
+        logging.info(f"[{datetime.datetime.now()}] Received /analyze_resume/ request for user: {user_email}")
         logging.debug(f"Payload received: {payload.dict()}")
 
-        resume_text = s3_client.get_resume_from_s3(user_email_from_token)
+        s3_key = request.query_params.get("s3_key")
+        resume_text = (
+            s3_client.get_resume_by_key(s3_key)
+            if s3_key else s3_client.get_resume_from_s3(user_id)
+        )
+
         if not resume_text.strip():
             raise HTTPException(status_code=400, detail="Could not extract text from stored resume.")
 
@@ -60,7 +76,7 @@ async def analyze_resume(
             WHERE user_id = %s AND login_status = 'SUCCESS'
             ORDER BY login_time DESC
             LIMIT 1
-        """, (user_id_from_token,))
+        """, (user_id,))
         log_data = cursor.fetchone()
         log_id_for_interview = log_data[0] if log_data else None
 
@@ -77,18 +93,25 @@ async def analyze_resume(
 
         cursor.execute("""
             INSERT INTO Interview (
-                 current_designation, target_role, target_company, years_of_experience,
-                 interview_type, session_interval, log_id, created_at
+                current_designation, target_role, target_company, years_of_experience,
+                interview_type, session_interval, log_id, created_at
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """, tuple(Interview_data_to_store.values()))
         db_conn.commit()
         interview_id_for_session = cursor.lastrowid
+        genai.configure(api_key=GEMINI_API_KEY)
 
-        model = genai.GenerativeModel(MODEL_ID)
+        genai.configure(api_key=GEMINI_API_KEY)
+        model = genai.GenerativeModel(model_name=MODEL_ID)
+
         prompt = llm1_prompt(
-            resume_text=resume_text, target_role=payload.targetRole, target_company=payload.targetCompany,
-            years_of_experience=payload.yearsOfExperience, current_designation=payload.currentDesignation,
-            session_interval=payload.sessionInterval or "N/A", interview_type=payload.interviewType
+            resume_text=resume_text,
+            target_role=payload.targetRole,
+            target_company=payload.targetCompany,
+            years_of_experience=payload.yearsOfExperience,
+            current_designation=payload.currentDesignation,
+            session_interval=payload.sessionInterval or "N/A",
+            interview_type=payload.interviewType
         )
         llm_response = model.generate_content(prompt)
         llm_response_text = llm_response.text
@@ -98,8 +121,8 @@ async def analyze_resume(
         questionnaire_prompt = json.loads(questionnaire_json_str)
 
         resume_data_to_store = {
-            "user_id": user_id_from_token,
-            "email_address": user_email_from_token,
+            "user_id": user_id,
+            "email_address": user_email,
             "mobile_number": extracted_fields.get("mobile_number"),
             "graduation_college": extracted_fields.get("graduation_college"),
             "skills": extracted_fields.get("skills"),
@@ -140,7 +163,7 @@ async def analyze_resume(
             WHERE user_id = %s
             ORDER BY resume_id DESC
             LIMIT 1
-        """, (user_id_from_token,))
+        """, (user_id,))
         resume_id_for_session_data = cursor.fetchone()
 
         if not resume_id_for_session_data:

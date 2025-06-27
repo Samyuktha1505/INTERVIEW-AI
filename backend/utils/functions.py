@@ -6,9 +6,9 @@ import logging
 func_logger = logging.getLogger(__name__)
 func_logger.setLevel(logging.INFO)
 
-def extract_text_from_pdf(pdf_path):
-    func_logger.info(f"Extracting text from PDF: {pdf_path}")
-    doc = fitz.open(pdf_path)
+def extract_text_from_pdf_bytes(pdf_bytes: bytes) -> str:
+    func_logger.info("Extracting text from PDF bytes")
+    doc = fitz.open("pdf", pdf_bytes)
     text = ""
     for page_num, page in enumerate(doc):
         page_text = page.get_text()
@@ -44,7 +44,6 @@ def extract_metrics_from_json(raw_string: str) -> dict:
     cleaned_string = clean_json_string(raw_string)
 
     try:
-        import re
         match = re.search(r'\{.*\}', cleaned_string, re.DOTALL)
         if not match:
             raise ValueError("No valid JSON object found.")

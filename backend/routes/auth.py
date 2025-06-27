@@ -11,9 +11,15 @@ from backend.db.mysql import get_db_connection
 from backend.db.redis import redis_client
 from backend.utils.jwt_auth import create_access_token, get_current_user
 from backend.utils.email_validator import is_real_email
-from backend.config import EMAIL_PASS,EMAIL_USER
+from backend.config import EMAIL_PASS,EMAIL_USER,GOOGLE_CLIENT_ID
 from datetime import timedelta
 from email.mime.text import MIMEText
+from fastapi import File, UploadFile, Form, Depends, HTTPException, status
+from fastapi.responses import JSONResponse
+from backend.utils.s3_client import s3_client
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
+  
 
 def get_email_transporter():
     try:
@@ -45,7 +51,7 @@ class MetricsPayload(BaseModel):
 router = APIRouter()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+ACCESS_TOKEN_EXPIRE_MINUTES = 300
 LOCATION_DEFAULT = "Kurnool, India"
 
 # --- Pydantic Payloads ---
@@ -59,14 +65,6 @@ class LoginPayload(BaseModel):
     email: EmailStr
     password: str
 
-class BasicInfo(BaseModel):
-    firstName: str
-    lastName: str
-    mobile: Optional[str] = None
-    gender: Optional[str] = None
-    dateOfBirth: Optional[str] = None
-    collegeName: Optional[str] = None
-    yearsOfExperience: Optional[int] = 0
 
 # --- Utility functions ---
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -231,16 +229,13 @@ async def login(payload: LoginPayload, request: Request):
 
 @router.post("/google-auth-login")
 async def google_auth_login(request: Request):
-    from google.oauth2 import id_token
-    from google.auth.transport import requests as grequests
-
     data = await request.json()
     token = data.get("token")
     if not token:
         raise HTTPException(status_code=400, detail="Token missing")
 
     try:
-        idinfo = id_token.verify_oauth2_token(token, grequests.Request())
+        idinfo = id_token.verify_oauth2_token(token, google_requests.Request(), audience=GOOGLE_CLIENT_ID)
         email = idinfo.get("email")
         if not email:
             raise HTTPException(status_code=400, detail="Invalid Google token")
@@ -272,16 +267,58 @@ async def google_auth_login(request: Request):
         set_token_cookie(response, access_token)
         return response
 
-    except ValueError:
+    except ValueError as e:
+        print("Google token verification error:", e)
         raise HTTPException(status_code=401, detail="Invalid Google token")
 
 
 @router.post("/basic-info")
-async def save_basic_info(payload: BasicInfo, current_user: dict = Depends(get_current_user)):
-    user_id = current_user.get("user_id")
-    conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
+async def save_basic_info(
+    firstName: str = Form(...),
+    lastName: str = Form(...),
+    mobile: str = Form(...),
+    gender: str = Form(...),
+    dateOfBirth: str = Form(...),
+    collegeName: str = Form(...),
+    yearsOfExperience: int = Form(...),
+    countryCode: str = Form(...),
+    resumeFile: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user)
+):
+    conn = None
+    cursor = None
+
     try:
+        user_id = current_user.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+
+        # Validate resume file type
+        allowed_mimes = [
+            "application/pdf",
+            "application/msword",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ]
+        if resumeFile.content_type not in allowed_mimes:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid file type. Only PDF, DOC, and DOCX are allowed."
+            )
+
+        file_bytes = await resumeFile.read()
+
+        # Upload resume to S3
+        upload_result = s3_client.upload_resume(
+            user_id=str(user_id),
+            file_bytes=file_bytes,
+            content_type=resumeFile.content_type
+        )
+        s3_key = upload_result["s3_key"]
+        s3_url = upload_result["url"]
+
+        # Update user record in DB
+        conn = get_db_connection()
+        cursor = conn.cursor()
         cursor.execute(
             """
             UPDATE User SET
@@ -292,31 +329,37 @@ async def save_basic_info(payload: BasicInfo, current_user: dict = Depends(get_c
                 date_of_birth = %s,
                 college_name = %s,
                 years_of_experience = %s,
+                country_code = %s,
+                resume_url = %s,
                 updated_at = NOW()
             WHERE user_id = %s
             """,
             (
-                payload.firstName,
-                payload.lastName,
-                payload.mobile,
-                payload.gender,
-                payload.dateOfBirth,
-                payload.collegeName,
-                payload.yearsOfExperience,
+                firstName,
+                lastName,
+                mobile,
+                gender,
+                dateOfBirth,
+                collegeName,
+                yearsOfExperience,
+                countryCode,
+                s3_url,
                 user_id
             )
         )
         conn.commit()
 
-        # No need to check profile completeness here, but can be done elsewhere
-        return {"message": "Profile updated successfully."}
+        return JSONResponse(content={"message": "Profile updated successfully.", "resume_url": s3_url})
 
+    except HTTPException:
+        raise  # Rethrow known HTTP errors
     except Exception as e:
-        print(f"Error saving basic info: {e}")
+        logging.error(f"Error in /basic-info: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error.")
     finally:
-        cursor.close()
-        conn.close()
+        if cursor: cursor.close()
+        if conn and conn.is_connected(): conn.close()
+
 
 
 @router.get("/me", tags=["Authentication"])
@@ -483,3 +526,45 @@ async def reset_password(payload: ResetPasswordPayload):
     finally:
         if cursor: cursor.close()
         if db_conn and db_conn.is_connected(): db_conn.close()
+        
+
+@router.get("/user-profile", tags=["Authentication"])
+async def get_user_profile(current_user: dict = Depends(get_current_user)):
+    user_id = current_user.get("user_id")
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    try:
+        cursor.execute(
+            """
+            SELECT first_name, last_name, phone, gender, date_of_birth,
+                   college_name, years_of_experience, resume_url, country_code
+            FROM User
+            WHERE user_id = %s
+            """,
+            (user_id,)
+        )
+        user = cursor.fetchone()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        return {
+            "success": True,
+            "user": {
+                "first_name": user.get("first_name"),
+                "last_name": user.get("last_name"),
+                "mobile": user.get("phone"),
+                "gender": user.get("gender"),
+                "date_of_birth": user.get("date_of_birth"),
+                "college_name": user.get("college_name"),
+                "years_of_experience": user.get("years_of_experience"),
+                "resume_url": user.get("resume_url"),
+                "country_code": user.get("country_code"),
+                "email": current_user.get("email"),
+                "user_id": user_id
+            }
+        }
+
+    finally:
+        cursor.close()
+        conn.close()

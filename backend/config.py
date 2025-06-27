@@ -36,3 +36,4 @@ REDIS_SSL = os.getenv("REDIS_SSL", "false").lower() == "true"
 
 # backend/config.py
 MODEL_ID = "gemini-2.0-flash"
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
