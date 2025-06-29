@@ -17,6 +17,7 @@ export interface Question {
 }
 
 export interface ResumeAnalysisResponse {
+  session_id: string; 
   Questionnaire_prompt: Question[];
 }
 

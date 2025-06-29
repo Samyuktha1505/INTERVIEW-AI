@@ -108,7 +108,7 @@ const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ open, onOpenChange })
       
       // Call analyzeResume with the plain JSON object
       await analyzeResume(analysisPayload);
-
+      await createRoom(roomData);
       toast({
         title: "Room created successfully!",
         description: "Your new interview room is available on the dashboard.",
