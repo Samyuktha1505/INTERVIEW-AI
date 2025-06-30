@@ -347,7 +347,52 @@ async def save_basic_info(
                 user_id
             )
         )
+        
+        cursor.execute("""
+            SELECT log_id FROM LoginTrace
+            WHERE user_id = %s AND login_status = 'SUCCESS'
+            ORDER BY login_time DESC
+            LIMIT 1
+        """, (user_id,))
+        log_result = cursor.fetchone()
+        log_id = log_result[0] if log_result else None
+        
+        # --- New insertion into Resume table ---
+        
+        fullname = f"{firstName} {lastName}"
+        cursor.execute(
+    """
+    INSERT INTO Resume (user_id, full_name, mobile_number, work_experience,Graduation_college)
+    VALUES (%s, %s, %s, %s,%s)
+    """,
+    (user_id, fullname, mobile, yearsOfExperience,collegeName)
+)
+
+
+        
+        cursor.execute("""
+            SELECT resume_id FROM Resume
+            WHERE user_id = %s
+            ORDER BY resume_id DESC
+            LIMIT 1
+        """, (user_id,))
+        resume_id_for_session_data = cursor.fetchone()
+
+        if not resume_id_for_session_data:
+            raise HTTPException(status_code=500, detail="Failed to retrieve resume_id after saving resume data.")
+
+        # Insert into resume_mapping table
+        cursor.execute(
+            """
+                INSERT INTO ResumePath (user_id, login_id, resume_id, resume_path)
+                VALUES (%s, %s, %s, %s)
+            """,
+            (user_id, log_id, resume_id_for_session_data[0],s3_url)
+        )
+
         conn.commit()
+        
+        
 
         return JSONResponse(content={"message": "Profile updated successfully.", "resume_url": s3_url})
 

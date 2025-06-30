@@ -120,42 +120,30 @@ async def analyze_resume(
         extracted_fields = json.loads(extracted_fields_json_str)
         questionnaire_prompt = json.loads(questionnaire_json_str)
 
-        resume_data_to_store = {
-            "user_id": user_id,
-            "email_address": user_email,
-            "mobile_number": extracted_fields.get("mobile_number"),
-            "graduation_college": extracted_fields.get("graduation_college"),
-            "skills": extracted_fields.get("skills"),
-            "certifications": extracted_fields.get("certifications"),
-            "projects": extracted_fields.get("projects"),
-            "previous_companies": extracted_fields.get("previous_companies"),
-            "education_degree": extracted_fields.get("education_degree"),
-            "current_role": extracted_fields.get("current_role", payload.currentDesignation),
-            "work_experience": extracted_fields.get("work_experience", payload.yearsOfExperience),
-            "current_company": extracted_fields.get("current_company"),
-            "current_location": extracted_fields.get("current_location")
-        }
 
         cursor.execute("""
-            INSERT INTO Resume (
-                user_id, email_address, mobile_number, graduation_college, education_degree, certifications, skills,
-                projects, current_company, previous_companies, current_location,
-                current_role, work_experience
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON DUPLICATE KEY UPDATE
-                email_address = VALUES(email_address),
-                mobile_number = VALUES(mobile_number),
-                graduation_college = VALUES(graduation_college),
-                education_degree = VALUES(education_degree),
-                certifications = VALUES(certifications),
-                skills = VALUES(skills),
-                projects = VALUES(projects),
-                current_company = VALUES(current_company),
-                previous_companies = VALUES(previous_companies),
-                current_location = VALUES(current_location),
-                current_role = VALUES(current_role),
-                work_experience = VALUES(work_experience);
-        """, tuple(resume_data_to_store.values()))
+    UPDATE Resume SET
+        skills = %s,
+        certifications = %s,
+        projects = %s,
+        previous_companies = %s,
+        graduation_college = %s,
+        current_role = %s,
+        current_company = %s,
+        current_location = %s
+    WHERE user_id = %s
+""", (
+    extracted_fields.get("skills"),
+    extracted_fields.get("certifications"),
+    extracted_fields.get("projects"),
+    extracted_fields.get("previous_companies"),
+    extracted_fields.get("education_degree"),
+    extracted_fields.get("current_role", payload.currentDesignation),
+    extracted_fields.get("current_company"),
+    extracted_fields.get("current_location"),
+    user_id
+))
+
         db_conn.commit()
 
         cursor.execute("""
@@ -185,6 +173,7 @@ async def analyze_resume(
             json.dumps(questionnaire_prompt),
             datetime.datetime.utcnow()
         ))
+
         db_conn.commit()
 
         return JSONResponse(content={"session_id": session_id, "Questionnaire_prompt": questionnaire_prompt})

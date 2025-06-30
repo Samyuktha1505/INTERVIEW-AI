@@ -11,8 +11,104 @@ from backend.utils.jwt_auth import get_current_user   # Your auth dependency for
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+from pydantic import BaseModel
+from typing import Optional
+import uuid
+import datetime
 
-@router.post("/v1/sessions/check-completion")
+class CreateSessionPayload(BaseModel):
+    currentDesignation: str
+    targetRole: str
+    targetCompany: str
+    interviewType: str
+    yearsOfExperience: int
+    sessionInterval: Optional[int] = None
+
+@router.post("/create")
+async def create_interview_session(
+    payload: CreateSessionPayload,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    db = None
+    cursor = None
+    try:
+        user_id = current_user.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="User not authenticated")
+
+        db = get_db_connection()
+        cursor = db.cursor()
+
+        # Insert into Interview table
+        insert_interview = """
+            INSERT INTO Interview (target_role, target_company, interview_type, years_of_experience, current_designation, created_at, log_id)
+            VALUES (%s, %s, %s, %s, %s, %s,
+                (SELECT log_id FROM LoginTrace WHERE user_id = %s ORDER BY timestamp DESC LIMIT 1)
+            )
+        """
+        now = datetime.datetime.utcnow()
+        cursor.execute(insert_interview, (
+            payload.targetRole,
+            payload.targetCompany,
+            payload.interviewType,
+            payload.yearsOfExperience,
+            payload.currentDesignation,
+            now,
+            user_id
+        ))
+
+        interview_id = cursor.lastrowid
+
+        # Generate UUID for session
+        session_id = str(uuid.uuid4())
+
+        # Insert into InterviewSession table
+        insert_session = """
+            INSERT INTO InterviewSession (session_id, interview_id, session_interval)
+            VALUES (%s, %s, %s)
+        """
+        cursor.execute(insert_session, (
+            session_id,
+            interview_id,
+            payload.sessionInterval or 30
+        ))
+
+        # Insert into Meeting table
+        insert_meeting = """
+            INSERT INTO Meeting (session_id, transcription_flag)
+            VALUES (%s, %s)
+        """
+        cursor.execute(insert_meeting, (session_id, False))
+
+        db.commit()
+
+        return {
+            "id": session_id,
+            "userId": str(user_id),
+            "targetRole": payload.targetRole,
+            "targetCompany": payload.targetCompany,
+            "interviewType": payload.interviewType,
+            "yearsOfExperience": payload.yearsOfExperience,
+            "currentDesignation": payload.currentDesignation,
+            "sessionInterval": payload.sessionInterval,
+            "createdAt": now.isoformat(),
+            "hasCompletedInterview": False,
+            "transcript": None,
+            "metrics": None
+        }
+
+    except Exception as e:
+        if db:
+            db.rollback()
+        logger.error(f"Error creating interview session: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create interview session.")
+    finally:
+        if cursor:
+            cursor.close()
+        if db and db.is_connected():
+            db.close()
+
+@router.post("/check-completion")
 async def check_session_completion(
     payload: SessionIdList, 
     current_user: Dict[str, Any] = Depends(get_current_user)

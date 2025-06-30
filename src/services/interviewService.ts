@@ -75,7 +75,7 @@ export const apiRequest = async <T = any>({
 };
 
 export const checkCompletedSessions = async (roomIds: string[]): Promise<Set<string>> => {
-  const res = await fetch("http://localhost:8000/v1/sessions/check-completion", {
+  const res = await fetch("http://localhost:8000/api/v1/sessions/check-completion", {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
