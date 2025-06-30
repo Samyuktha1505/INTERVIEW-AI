@@ -205,6 +205,13 @@ async def analyze_resume(
             datetime.datetime.utcnow()
         ))
 
+        # Insert into Meeting table
+        insert_meeting = """
+            INSERT INTO Meeting (session_id, transcription_flag)
+            VALUES (%s, %s)
+        """
+        cursor.execute(insert_meeting, (session_id, False))
+
         db_conn.commit()
 
         return JSONResponse(content={"session_id": session_id, "Questionnaire_prompt": questionnaire_prompt})
