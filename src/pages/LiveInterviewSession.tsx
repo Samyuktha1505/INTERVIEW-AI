@@ -24,8 +24,8 @@ import { useScreenCapture } from "../hooks/use-screen-capture";
 import { AudioRecorder } from "../lib/audio-recorder";
 
 async function fetchAnalysis(sessionId: string) {
-  const API_BASE_URL = 'http://localhost:8000';
-  const response = await fetch(`${API_BASE_URL}/v1/analysis/${sessionId}`);
+  const API_BASE_URL = 'http://localhost:8000/api';
+  const response = await fetch(`${API_BASE_URL}/v1/sessions/analysis/${sessionId}`);
   return response;
 }
 

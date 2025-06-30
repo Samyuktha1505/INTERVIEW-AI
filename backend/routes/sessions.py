@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Path
 from fastapi.responses import JSONResponse
 from typing import Dict, Any
 import logging
@@ -167,6 +167,56 @@ async def check_session_completion(
             cursor.close()
         if db_conn and db_conn.is_connected():
             db_conn.close()
+            
+@router.get("/analysis/{session_id}")
+async def get_analysis(session_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
+    """
+    Fetch analysis data for the given session ID if the current user owns the session.
+    """
+    conn = None
+    cursor = None
+    try:
+        user_id = current_user.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="User not authenticated")
+
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        # Verify that the session belongs to this user and fetch analysis
+        query = """
+            SELECT analysis_data -- replace with your actual analysis columns
+            FROM AnalysisTable -- replace with your actual table name
+            WHERE session_id = %s
+            AND session_id IN (
+                SELECT ifs.session_id
+                FROM InterviewSession ifs
+                JOIN Interview i ON ifs.interview_id = i.interview_id
+                JOIN LoginTrace lt ON i.log_id = lt.log_id
+                WHERE lt.user_id = %s
+            )
+            LIMIT 1
+        """
+
+        cursor.execute(query, (session_id, user_id))
+        analysis_row = cursor.fetchone()
+
+        if not analysis_row:
+            raise HTTPException(status_code=404, detail="Analysis data not found or access denied.")
+
+        # Return the analysis data as JSON
+        return analysis_row
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching analysis for session {session_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch analysis data.")
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
 
 @router.get("/")
 async def get_sessions(current_user: Dict[str, Any] = Depends(get_current_user)):
