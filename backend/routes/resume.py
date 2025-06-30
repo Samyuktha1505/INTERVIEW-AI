@@ -3,13 +3,14 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from backend.utils.jwt_auth import get_current_user
 from backend.utils.prompts import llm1_prompt
-from backend.config import MODEL_ID, GEMINI_API_KEY
+from backend.config import MODEL_ID, GEMINI_API_KEY, MOCK_GEMINI_API
 from backend.utils.s3_client import s3_client
 from backend.db.mysql import get_db_connection
 from backend.utils.functions import process_and_extract_json_data
 import google.generativeai as genai
 import fitz
 import datetime, json, logging, uuid
+from google.api_core.exceptions import ResourceExhausted
 
 router = APIRouter()
 
@@ -73,7 +74,7 @@ async def analyze_resume(
 
         cursor.execute("""
             SELECT log_id FROM LoginTrace
-            WHERE user_id = %s AND login_status = 'SUCCESS'
+            WHERE user_id = %s AND login_status IN ('SUCCESS', 'SIGNUP_SUCCESS')
             ORDER BY login_time DESC
             LIMIT 1
         """, (user_id,))
@@ -101,25 +102,55 @@ async def analyze_resume(
         interview_id_for_session = cursor.lastrowid
         genai.configure(api_key=GEMINI_API_KEY)
 
-        genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel(model_name=MODEL_ID)
-
-        prompt = llm1_prompt(
-            resume_text=resume_text,
-            target_role=payload.targetRole,
-            target_company=payload.targetCompany,
-            years_of_experience=payload.yearsOfExperience,
-            current_designation=payload.currentDesignation,
-            session_interval=payload.sessionInterval or "N/A",
-            interview_type=payload.interviewType
-        )
-        llm_response = model.generate_content(prompt)
-        llm_response_text = llm_response.text
+        llm_response_text = None
+        if MOCK_GEMINI_API:
+            print("--- USING MOCK GEMINI API RESPONSE ---")
+            # This is a sample response to avoid hitting API quota limits during development
+            llm_response_text = """
+```json
+{
+  "Extracted_fields": {
+    "skills": ["Python", "FastAPI", "React", "SQL"],
+    "certifications": ["Mock Certified Developer"],
+    "projects": ["Mock Interview AI Platform"],
+    "previous_companies": ["Mock Company A", "Mock Company B"],
+    "education_degree": "B.S. in Mock Science",
+    "current_role": "Mock Software Engineer",
+    "current_company": "Mock Startup Inc.",
+    "current_location": "Mock City, MS"
+  },
+  "Questionnaire_prompt": [
+      { "question": "This is a mock question. Tell me about a time you solved a difficult problem.", "category": "Behavioral" },
+      { "question": "This is a mock question. How would you design a system to handle 1 million users?", "category": "System Design" },
+      { "question": "This is a mock question. What are the core principles of your favorite programming language?", "category": "Technical" }
+  ]
+}
+```
+"""
+        else:
+            genai.configure(api_key=GEMINI_API_KEY)
+            model = genai.GenerativeModel(model_name=MODEL_ID)
+            prompt = llm1_prompt(
+                resume_text=resume_text,
+                target_role=payload.targetRole,
+                target_company=payload.targetCompany,
+                years_of_experience=payload.yearsOfExperience,
+                current_designation=payload.currentDesignation,
+                session_interval=payload.sessionInterval or "N/A",
+                interview_type=payload.interviewType
+            )
+            llm_response = model.generate_content(prompt)
+            llm_response_text = llm_response.text
 
         extracted_fields_json_str, questionnaire_json_str = process_and_extract_json_data(llm_response_text)
         extracted_fields = json.loads(extracted_fields_json_str)
         questionnaire_prompt = json.loads(questionnaire_json_str)
 
+        # Convert list fields to JSON strings for database storage
+        skills_str = json.dumps(extracted_fields.get("skills")) if extracted_fields.get("skills") else None
+        certifications_str = json.dumps(extracted_fields.get("certifications")) if extracted_fields.get("certifications") else None
+        projects_str = json.dumps(extracted_fields.get("projects")) if extracted_fields.get("projects") else None
+        previous_companies_str = json.dumps(extracted_fields.get("previous_companies")) if extracted_fields.get("previous_companies") else None
 
         cursor.execute("""
     UPDATE Resume SET
@@ -133,10 +164,10 @@ async def analyze_resume(
         current_location = %s
     WHERE user_id = %s
 """, (
-    extracted_fields.get("skills"),
-    extracted_fields.get("certifications"),
-    extracted_fields.get("projects"),
-    extracted_fields.get("previous_companies"),
+    skills_str,
+    certifications_str,
+    projects_str,
+    previous_companies_str,
     extracted_fields.get("education_degree"),
     extracted_fields.get("current_role", payload.currentDesignation),
     extracted_fields.get("current_company"),
@@ -178,6 +209,13 @@ async def analyze_resume(
 
         return JSONResponse(content={"session_id": session_id, "Questionnaire_prompt": questionnaire_prompt})
 
+    except ResourceExhausted as e:
+        logging.error(f"Gemini API quota exceeded in /analyze_resume/: {e}", exc_info=True)
+        if db_conn:
+            db_conn.rollback()
+        return JSONResponse(status_code=429, content={
+            "detail": "Resume analysis is temporarily unavailable due to API usage limits. Please try again later."
+        })
     except HTTPException as e:
         logging.error(f"HTTPException in /analyze_resume/: {e.detail}", exc_info=True)
         if db_conn:

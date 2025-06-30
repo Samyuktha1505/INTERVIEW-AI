@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse
 from typing import Dict, Any
 import logging
 import traceback
+import json
 
 from backend.db.mysql import get_db_connection
 from backend.schemas import SessionIdList  # Your Pydantic model for payload validation
@@ -183,29 +184,25 @@ async def get_analysis(session_id: str, current_user: Dict[str, Any] = Depends(g
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
 
-        # Verify that the session belongs to this user and fetch analysis
         query = """
-            SELECT analysis_data -- replace with your actual analysis columns
-            FROM AnalysisTable -- replace with your actual table name
-            WHERE session_id = %s
-            AND session_id IN (
-                SELECT ifs.session_id
-                FROM InterviewSession ifs
-                JOIN Interview i ON ifs.interview_id = i.interview_id
-                JOIN LoginTrace lt ON i.log_id = lt.log_id
-                WHERE lt.user_id = %s
-            )
+            SELECT ifs.prompt_example_questions
+            FROM InterviewSession ifs
+            JOIN Interview i ON ifs.interview_id = i.interview_id
+            JOIN LoginTrace lt ON i.log_id = lt.log_id
+            WHERE ifs.session_id = %s AND lt.user_id = %s
             LIMIT 1
         """
 
         cursor.execute(query, (session_id, user_id))
         analysis_row = cursor.fetchone()
 
-        if not analysis_row:
+        if not analysis_row or not analysis_row.get("prompt_example_questions"):
             raise HTTPException(status_code=404, detail="Analysis data not found or access denied.")
 
-        # Return the analysis data as JSON
-        return analysis_row
+        # The data is stored as a JSON string, so we need to parse it.
+        questionnaire_prompt = json.loads(analysis_row["prompt_example_questions"])
+        
+        return JSONResponse(content={"Questionnaire_prompt": questionnaire_prompt})
 
     except HTTPException:
         raise
@@ -259,6 +256,34 @@ async def get_sessions(current_user: Dict[str, Any] = Depends(get_current_user))
     except Exception as e:
         logger.error(f"Error retrieving sessions: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch sessions")
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+@router.delete("/interview/{interview_id}")
+async def delete_interview(interview_id: int, current_user: Dict[str, Any] = Depends(get_current_user)):
+    try:
+        user_id = current_user.get("user_id")
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Only delete if the interview belongs to the user
+        cursor.execute("""
+            DELETE i FROM Interview i
+            JOIN LoginTrace lt ON i.log_id = lt.log_id
+            WHERE i.interview_id = %s AND lt.user_id = %s
+        """, (interview_id, user_id))
+        conn.commit()
+
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Interview not found or not authorized to delete.")
+
+        return {"detail": "Interview deleted successfully."}
+    except Exception as e:
+        logger.error(f"Error deleting interview: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete interview")
     finally:
         if cursor:
             cursor.close()

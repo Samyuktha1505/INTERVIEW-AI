@@ -25,7 +25,13 @@ import { AudioRecorder } from "../lib/audio-recorder";
 
 async function fetchAnalysis(sessionId: string) {
   const API_BASE_URL = 'http://localhost:8000/api';
-  const response = await fetch(`${API_BASE_URL}/v1/sessions/analysis/${sessionId}`);
+  const response = await fetch(`${API_BASE_URL}/v1/sessions/analysis/${sessionId}`, {
+    credentials: 'include',
+  });
+  if (response.status === 401) {
+    window.location.href = '/login';
+    throw new Error('Unauthorized. Redirecting to login.');
+  }
   return response;
 }
 
@@ -41,33 +47,28 @@ const LiveInterviewSessionContent = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const sessionEndedRef = useRef(false);
+  const [interviewStarted, setInterviewStarted] = useState(false);
+  const { disconnect, connected, connect } = useLiveAPIContext();
 
   const webcam = useWebcam();
   const screenCapture = useScreenCapture();
   const [audioRecorder] = useState(() => new AudioRecorder());
-  const { disconnect } = useLiveAPIContext();
 
   useEffect(() => {
     sessionEndedRef.current = false;
     useChatStore.getState().clearChat();
-
-    if (roomId) {
-      SessionTranscription.initializeSession(roomId);
-    }
-
     return () => {
       console.log("Cleanup effect: Ensuring all media resources are released.");
       webcam.stop();
       screenCapture.stop();
       audioRecorder.stop();
       disconnect();
-
-      if (!sessionEndedRef.current) {
+      if (!sessionEndedRef.current && interviewStarted) {
         console.log("Component unmounted unexpectedly. Saving transcription as a fallback.");
         SessionTranscription.endSession();
       }
     };
-  }, [roomId, disconnect, webcam, screenCapture, audioRecorder]);
+  }, [roomId, disconnect, webcam, screenCapture, audioRecorder, interviewStarted]);
 
   useEffect(() => {
     if (!roomId) {
@@ -113,27 +114,34 @@ const LiveInterviewSessionContent = () => {
     getAnalysisWithRetries();
   }, [roomId]);
 
+  const handleStartInterview = async () => {
+    if (!interviewStarted && roomId) {
+      SessionTranscription.initializeSession(roomId);
+      setInterviewStarted(true);
+    }
+    await connect();
+  };
+
   const handleEndAndSave = async () => {
     sessionEndedRef.current = true;
     console.log("End & Save clicked. Stopping media, saving transcription, and navigating.");
-
     webcam.stop();
     screenCapture.stop();
     audioRecorder.stop();
     disconnect();
-
-    await SessionTranscription.endSession();
+    if (interviewStarted) {
+      await SessionTranscription.endSession();
+      setInterviewStarted(false);
+    }
     navigate('/dashboard');
   };
 
   const handleEndWithoutSaving = () => {
     console.log("Navigating away without saving. Stopping media.");
-    
     webcam.stop();
     screenCapture.stop();
     audioRecorder.stop();
     disconnect();
-
     navigate('/dashboard');
   };
 
@@ -170,6 +178,8 @@ const LiveInterviewSessionContent = () => {
             audioRecorder={audioRecorder}
             webcam={webcam}
             screenCapture={screenCapture}
+            onStartInterview={handleStartInterview}
+            connected={connected}
           />
         </main>
       </div>

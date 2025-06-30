@@ -38,6 +38,8 @@ export type ControlTrayProps = {
   audioRecorder: AudioRecorder;
   webcam: UseMediaStreamResult;
   screenCapture: UseMediaStreamResult;
+  onStartInterview: () => Promise<void>;
+  connected: boolean;
 };
 
 function ControlTray({
@@ -50,6 +52,8 @@ function ControlTray({
   audioRecorder,
   webcam,
   screenCapture,
+  onStartInterview,
+  connected,
 }: ControlTrayProps) {
   // MODIFIED: This component no longer creates its own media hooks. It receives them as props.
   const videoStreams = [webcam, screenCapture];
@@ -58,7 +62,7 @@ function ControlTray({
   const renderCanvasRef = useRef<HTMLCanvasElement>(null);
 
   // MODIFIED: The disconnect function is no longer called directly from here.
-  const { client, connected, connect } = useLiveAPIContext();
+  const { client, connect } = useLiveAPIContext();
 
   useEffect(() => {
     const onData = (base64: string) => {
@@ -165,9 +169,9 @@ function ControlTray({
         <div className="h-8 w-px bg-slate-700 mx-2"></div>
         <Tooltip>
           <TooltipTrigger asChild>
-            {/* MODIFIED: This button now saves the session when ending it. */}
+            {/* MODIFIED: This button now starts or ends the interview session. */}
             <Button
-              onClick={connected ? onEndAndSave : connect}
+              onClick={connected ? onEndAndSave : onStartInterview}
               className={cn(
                 "h-12 w-12 rounded-full text-white",
                 connected
@@ -183,7 +187,6 @@ function ControlTray({
             </Button>
           </TooltipTrigger>
           <TooltipContent>
-            {/* MODIFIED: Tooltip text updated to reflect new functionality. */}
             <p>{connected ? "End Interview & Save" : "Start Interview"}</p>
           </TooltipContent>
         </Tooltip>

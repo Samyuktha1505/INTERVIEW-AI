@@ -12,6 +12,7 @@ export const saveTranscription = async (sessionId: string, transcriptionText: st
       headers: {
         'Content-Type': 'application/json',
       },
+      credentials: 'include',
       body: JSON.stringify({
         session_id: sessionId,
         transcription_text: transcriptionText,

@@ -37,3 +37,6 @@ REDIS_SSL = os.getenv("REDIS_SSL", "false").lower() == "true"
 # backend/config.py
 MODEL_ID = "gemini-2.0-flash"
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+# Add a flag for mocking the Gemini API
+MOCK_GEMINI_API = os.getenv("MOCK_GEMINI_API", "True").lower() == "true"
