@@ -4,7 +4,7 @@ import apiClient from '../api/httpClient';
 export interface AnalysisRequestPayload {
   targetRole: string;
   targetCompany: string;
-  yearsOfExperience: number;
+  yearsOfExperience: string;
   currentDesignation: string;
   interviewType: string;
   sessionInterval?: number;

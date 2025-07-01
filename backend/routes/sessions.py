@@ -1,21 +1,30 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Path
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
 from typing import Dict, Any
 import logging
 import traceback
 import json
+import decimal
 
 from backend.db.mysql import get_db_connection
 from backend.schemas import SessionIdList  # Your Pydantic model for payload validation
 from backend.utils.jwt_auth import get_current_user   # Your auth dependency for user info
 
+from pydantic import BaseModel
+from typing import Optional
+
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-from pydantic import BaseModel
-from typing import Optional
-import uuid
-import datetime
+def convert_decimal(obj):
+    if isinstance(obj, list):
+        return [convert_decimal(i) for i in obj]
+    elif isinstance(obj, dict):
+        return {k: convert_decimal(v) for k, v in obj.items()}
+    elif isinstance(obj, decimal.Decimal):
+        return int(obj) if obj == int(obj) else float(obj)
+    else:
+        return obj
 
 @router.post("/check-completion")
 async def check_session_completion(
@@ -66,8 +75,8 @@ async def check_session_completion(
 
         return JSONResponse(content={"sessions": response_data})
 
-    except HTTPException as e:
-        raise e
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error checking session completion: {e}\n{traceback.format_exc()}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An internal error occurred while checking session completion.")
@@ -107,7 +116,6 @@ async def get_analysis(session_id: str, current_user: Dict[str, Any] = Depends(g
         if not analysis_row or not analysis_row.get("prompt_example_questions"):
             raise HTTPException(status_code=404, detail="Analysis data not found or access denied.")
 
-        # The data is stored as a JSON string, so we need to parse it.
         questionnaire_prompt = json.loads(analysis_row["prompt_example_questions"])
         
         return JSONResponse(content={"Questionnaire_prompt": questionnaire_prompt})
@@ -115,7 +123,7 @@ async def get_analysis(session_id: str, current_user: Dict[str, Any] = Depends(g
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error fetching analysis for session {session_id}: {e}")
+        logger.error(f"Error fetching analysis for session {session_id}: {e}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail="Failed to fetch analysis data.")
     finally:
         if cursor:
@@ -125,6 +133,8 @@ async def get_analysis(session_id: str, current_user: Dict[str, Any] = Depends(g
 
 @router.get("/")
 async def get_sessions(current_user: Dict[str, Any] = Depends(get_current_user)):
+    conn = None
+    cursor = None
     try:
         user_id = current_user.get("user_id")
         conn = get_db_connection()
@@ -159,10 +169,10 @@ async def get_sessions(current_user: Dict[str, Any] = Depends(get_current_user))
                 "metrics": None
             })
 
-        return JSONResponse(content={"sessions": sessions})
+        return JSONResponse(content={"sessions": convert_decimal(sessions)})
 
     except Exception as e:
-        logger.error(f"Error retrieving sessions: {e}")
+        logger.error(f"Error retrieving sessions: {e}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail="Failed to fetch sessions")
     finally:
         if cursor:
@@ -172,6 +182,8 @@ async def get_sessions(current_user: Dict[str, Any] = Depends(get_current_user))
 
 @router.delete("/interview/{interview_id}")
 async def delete_interview(interview_id: int, current_user: Dict[str, Any] = Depends(get_current_user)):
+    conn = None
+    cursor = None
     try:
         user_id = current_user.get("user_id")
         conn = get_db_connection()
@@ -188,9 +200,9 @@ async def delete_interview(interview_id: int, current_user: Dict[str, Any] = Dep
         if cursor.rowcount == 0:
             raise HTTPException(status_code=404, detail="Interview not found or not authorized to delete.")
 
-        return {"detail": "Interview deleted successfully."}
+        return JSONResponse(content={"detail": "Interview deleted successfully."})
     except Exception as e:
-        logger.error(f"Error deleting interview: {e}")
+        logger.error(f"Error deleting interview: {e}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail="Failed to delete interview")
     finally:
         if cursor:
