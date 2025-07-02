@@ -6,6 +6,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
 import { InterviewProvider } from "./contexts/InterviewContext";
+import InterviewLogs from "./pages/InterviewLogs"; 
+
 
 import Index from "./pages/Index";
 import Login from "./pages/Login";
@@ -57,6 +59,7 @@ const App = () => (
                 }
               />
               <Route path="/forgot-password" element={<ForgotPassword />} />
+              <Route path="/interview-logs" element={<ProtectedRoute><InterviewLogs /></ProtectedRoute>} />
               <Route
                 path="/interview-session/:roomId"
                 element={
