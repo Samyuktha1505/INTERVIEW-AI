@@ -5,10 +5,12 @@ import logging
 import traceback
 import json
 import decimal
+import datetime
 
 from backend.db.mysql import get_db_connection
 from backend.schemas import SessionIdList  # Your Pydantic model for payload validation
 from backend.utils.jwt_auth import get_current_user   # Your auth dependency for user info
+from backend.utils.s3_client import s3_client
 
 from pydantic import BaseModel
 from typing import Optional
@@ -143,7 +145,7 @@ async def get_sessions(current_user: Dict[str, Any] = Depends(get_current_user))
         cursor.execute("""
             SELECT i.interview_id, ifs.session_id, m.transcription_flag, m.transcription, i.target_role,
                    i.target_company, i.interview_type, i.years_of_experience, i.current_designation, 
-                   i.created_at
+                   i.created_at, i.status
             FROM Interview i
             JOIN InterviewSession ifs ON i.interview_id = ifs.interview_id
             JOIN Meeting m ON ifs.session_id = m.session_id
@@ -157,6 +159,7 @@ async def get_sessions(current_user: Dict[str, Any] = Depends(get_current_user))
         for row in rows:
             sessions.append({
                 "id": row["session_id"],
+                "interview_id": row["interview_id"],
                 "userId": str(user_id),
                 "targetRole": row["target_role"],
                 "targetCompany": row["target_company"],
@@ -166,7 +169,8 @@ async def get_sessions(current_user: Dict[str, Any] = Depends(get_current_user))
                 "createdAt": row["created_at"].isoformat(),
                 "hasCompletedInterview": bool(row["transcription_flag"]),
                 "transcript": row["transcription"],
-                "metrics": None
+                "metrics": None,
+                "status": row["status"]
             })
 
         return JSONResponse(content={"sessions": convert_decimal(sessions)})
@@ -204,6 +208,47 @@ async def delete_interview(interview_id: int, current_user: Dict[str, Any] = Dep
     except Exception as e:
         logger.error(f"Error deleting interview: {e}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail="Failed to delete interview")
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+@router.delete("/sessions/{session_id}")
+async def delete_session(session_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
+    conn = None
+    cursor = None
+    try:
+        user_id = current_user.get("user_id")
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Find the interview_id for this session and user
+        cursor.execute("""
+            SELECT i.interview_id
+            FROM Interview i
+            JOIN InterviewSession s ON i.interview_id = s.interview_id
+            JOIN LoginTrace lt ON i.log_id = lt.log_id
+            WHERE s.session_id = %s AND lt.user_id = %s
+        """, (session_id, user_id))
+        result = cursor.fetchone()
+        if not result:
+            raise HTTPException(status_code=404, detail="Session not found or not authorized to delete.")
+
+        interview_id = result[0]
+
+        # Update the status to 'deleted'
+        cursor.execute("""
+            UPDATE Interview
+            SET status = 'deleted'
+            WHERE interview_id = %s
+        """, (interview_id,))
+        conn.commit()
+
+        return JSONResponse(content={"detail": "Session marked as deleted."})
+    except Exception as e:
+        logger.error(f"Error deleting session: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete session")
     finally:
         if cursor:
             cursor.close()

@@ -12,6 +12,7 @@ import { apiRequest } from '../services/interviewService';
 
 export interface Room {
   id: string;
+  interview_id?: string;
   userId?: string;
   targetRole: string;
   targetCompany: string;
@@ -23,6 +24,7 @@ export interface Room {
   hasCompletedInterview?: boolean;
   transcript?: string | null;
   metrics?: any;
+  status?: string;
 }
 
 interface InterviewContextType {
@@ -36,7 +38,7 @@ interface InterviewContextType {
     >
   ) => Promise<string>;
   getRoom: (roomId: string) => Room | undefined;
-  deleteRoom: (roomId: string) => Promise<void>;
+  deleteRoom: (roomId: string) => void;
   markRoomAsCompleted: (roomId: string) => Promise<void>;
   updateRoom: (
     roomId: string,
@@ -154,28 +156,15 @@ export const InterviewProvider = ({ children }: { children: ReactNode }) => {
 
   const getRoom = useCallback(
     (roomId: string): Room | undefined => {
-      const found = rooms.find((room) => room.id === roomId);
+      const found = rooms.find((room) => room.id === roomId && room.interview_id !== '0');
       console.log(`🔍 getRoom called for id=${roomId}, found:`, found);
       return found;
     },
     [rooms]
   );
 
-  const deleteRoom = async (roomId: string): Promise<void> => {
-    try {
-      console.log('➡️ Deleting room with id:', roomId);
-      await apiRequest({
-        endpoint: `/api/v1/sessions/${roomId}`,
-        method: 'DELETE',
-      });
-      setRooms((prev) => {
-        console.log('✅ Removing deleted room from state:', roomId);
-        return prev.filter((room) => room.id !== roomId);
-      });
-    } catch (error) {
-      console.error('❌ Failed to delete room:', error);
-      throw error;
-    }
+  const deleteRoom = (roomId: string): void => {
+    setRooms((prev) => prev.filter((room) => room.id !== roomId));
   };
 
   const markRoomAsCompleted = async (roomId: string): Promise<void> => {
@@ -218,13 +207,13 @@ export const InterviewProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const getCompletedRooms = useCallback(() => {
-    const completed = rooms.filter((room) => room.hasCompletedInterview);
+    const completed = rooms.filter((room) => room.hasCompletedInterview && room.interview_id !== '0');
     console.log('🔎 getCompletedRooms:', completed);
     return completed;
   }, [rooms]);
 
   const getPendingRooms = useCallback(() => {
-    const pending = rooms.filter((room) => !room.hasCompletedInterview);
+    const pending = rooms.filter((room) => !room.hasCompletedInterview && room.interview_id !== '0');
     console.log('🔎 getPendingRooms:', pending);
     return pending;
   }, [rooms]);

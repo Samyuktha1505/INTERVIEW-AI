@@ -51,9 +51,12 @@ const Dashboard = () => {
   const [resetLoading, setResetLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
-  // Filter rooms owned by current user
+  // Filter rooms owned by current user and with status 'scheduled'
+  const deletedRooms = JSON.parse(localStorage.getItem('deletedRooms') || '[]');
   const userRooms = rooms.filter(
-    (room) => String(room.userId) === String(user?.id)
+    (room) =>
+      String(room.userId) === String(user?.id) &&
+      !deletedRooms.includes(room.id)
   );
 
   // Check which rooms are completed for enabling report generation
@@ -77,21 +80,14 @@ const Dashboard = () => {
   };
 
   // Delete room handler with confirm dialog
-  const handleDeleteRoom = async (roomId: string) => {
-    if (window.confirm("Are you sure you want to delete this interview room?")) {
-      try {
-        await deleteRoom(roomId);
-        toast({
-          title: "Room deleted",
-          description: "Interview room has been removed",
-        });
-      } catch {
-        toast({
-          variant: "destructive",
-          title: "Failed to delete room",
-          description: "Please try again later.",
-        });
-      }
+  const handleDeleteRoom = (roomId: string) => {
+    if (window.confirm("Are you sure you want to remove this interview room from your dashboard?")) {
+      deleteRoom(roomId); // This should update the rooms state in your context
+      toast({
+        title: "Room deleted",
+        description: "Interview room has been removed from your dashboard.",
+      });
+      localStorage.setItem('deletedRooms', JSON.stringify([...deletedRooms, roomId]));
     }
   };
 
