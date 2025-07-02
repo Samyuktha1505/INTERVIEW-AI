@@ -60,27 +60,6 @@ def llm1_prompt(
 
             "Questionnaire_prompt" should be a JSON array of question objects, each with "id" (a unique number), "question" (the actual question string), and "type" (e.g., "Technical", "Behavioral", "Situational", "Project-based", or the specific interviewType if provided).
 
-            Example of the overall JSON structure:
-            ```json
-            {{
-                "Extracted_fields": {{
-                    "graduation_college": "State University",
-                    "education_degree": "M.Sc. Computer Science",
-                    "certifications": "AWS Certified Solutions Architect, Certified ScrumMaster",
-                    "skills": "Java, Spring Boot, AWS, Microservices, REST APIs, Agile, SQL",
-                    "projects": "Enterprise CRM System (developed user management), Distributed Data Platform (optimized data ingestion)",
-                    "current_company": "Innovate Corp",
-                    "previous_companies": "Tech Solutions Inc., Global Innovations",
-                    "current_location": "San Francisco, CA",
-                    "current_role": "Software Architect",
-                    "work_experience": "5 years of experience in full-stack development, specializing in designing scalable enterprise applications and leading cross-functional teams."
-                }},
-                "Questionnaire_prompt": [
-                    {{"id": 1, "question": "Can you explain your approach to designing scalable microservices, drawing from your experience at Innovate Corp?", "type": "Technical"}},
-                    {{"id": 2, "question": "Describe a time you faced a significant technical challenge in one of your projects and how you overcame it.", "type": "Behavioral"}}
-                ]
-            }}
-            ```
             Your output should only be the JSON object, without any markdown delimiters.
         """
     return prompt
