@@ -34,6 +34,12 @@ const Login = () => {
     e.preventDefault();
     setIsLoading(true);
 
+    const emailRegex = /^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/;
+    if (!emailRegex.test(email)) {
+      toast({ title: "Invalid Email", description: "Please enter a valid email address.", variant: "destructive" });
+      return false;
+    }
+
     try {
       await login(email, password); // this should fetch and set user via cookies
       toast({ title: "Login successful", description: "Welcome back!" });

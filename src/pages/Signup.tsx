@@ -47,13 +47,13 @@ const Signup = () => {
       return false;
     }
 
-    if (formData.password.length < 6) {
-      toast({ title: "Validation Error", description: "Password must be at least 6 characters long", variant: "destructive" });
+    if (formData.password.length < 8) {
+      toast({ title: "Weak Password", description: "Password must be at least 8 characters.", variant: "destructive" });
       return false;
     }
 
     if (formData.password !== formData.confirmPassword) {
-      toast({ title: "Validation Error", description: "Passwords do not match", variant: "destructive" });
+      toast({ title: "Password Mismatch", description: "Passwords do not match.", variant: "destructive" });
       return false;
     }
 

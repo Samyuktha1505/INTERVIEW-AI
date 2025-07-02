@@ -417,7 +417,7 @@ async def get_me(current_user: dict = Depends(get_current_user)):
         cursor.execute(
             """
             SELECT email, first_name, last_name, phone, gender, date_of_birth,
-                   college_name, years_of_experience
+                   college_name, years_of_experience, resume_url
             FROM User
             WHERE user_id = %s
             """,
@@ -449,7 +449,8 @@ async def get_me(current_user: dict = Depends(get_current_user)):
                 "dateOfBirth": user.get("date_of_birth"),
                 "collegeName": user.get("college_name"),
                 "yearsOfExperience": user.get("years_of_experience"),
-                "isProfileComplete": is_profile_complete
+                "isProfileComplete": is_profile_complete,
+                "resumeUrl": user.get("resume_url")
             }
         }
     finally:

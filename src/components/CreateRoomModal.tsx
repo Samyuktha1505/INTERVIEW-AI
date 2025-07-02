@@ -21,6 +21,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { useInterview } from "../contexts/InterviewContext";
 import { toast } from "@/hooks/use-toast";
 import { analyzeResume } from "../services/resumeAnalysis";
+import { fetchResumeUrl } from '../services/userService';
 
 interface CreateRoomModalProps {
   open: boolean;
@@ -55,21 +56,103 @@ const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ open, onOpenChange })
   };
 
   const validateForm = () => {
-    const { currentDesignation, targetRole, targetCompany, interviewType } = formData;
-    if (!currentDesignation || !targetRole || !targetCompany || !interviewType) {
-      toast({ title: "Validation Error", description: "Please fill in all required fields.", variant: "destructive" });
+    const { currentDesignation, targetRole, targetCompany, interviewType, yearsOfExperience, sessionInterval } = formData;
+
+    // 1. Required fields
+    if (!currentDesignation.trim() || !targetRole.trim() || !targetCompany.trim() || !interviewType.trim()) {
+      toast({ title: "Missing Fields", description: "All required fields must be filled.", variant: "destructive" });
       return false;
     }
+
+    // 2. Years of experience
+    if (!Number.isInteger(yearsOfExperience) || yearsOfExperience < 0) {
+      toast({ title: "Invalid Experience", description: "Years of experience must be a non-negative integer.", variant: "destructive" });
+      return false;
+    }
+
+    if (yearsOfExperience > 50) {
+      toast({ title: "Invalid Experience", description: "Years of experience must be less than 50.", variant: "destructive" });
+      return false;
+    }
+
+    // 3. Session interval
+    if (sessionInterval && (isNaN(Number(sessionInterval)) || Number(sessionInterval) < 5 || Number(sessionInterval) > 180)) {
+      toast({ title: "Invalid Session Interval", description: "Session interval must be a number between 5 and 180 minutes.", variant: "destructive" });
+      return false;
+    }
+
+    const validText = /^[a-zA-Z0-9 .,&-]+$/;
+    if (!validText.test(targetRole)) {
+      toast({ title: "Invalid Target Role", description: "Target role contains invalid characters.", variant: "destructive" });
+      return false;
+    }
+
+    const validCompany = /^[a-zA-Z0-9 .,&-]+$/;
+    if (!validCompany.test(targetCompany)) {
+      toast({ title: "Invalid Company Name", description: "Target company contains invalid characters.", variant: "destructive" });
+      return false;
+    }
+
+    if (currentDesignation.trim().toLowerCase() === targetRole.trim().toLowerCase()) {
+      toast({ title: "Role Conflict", description: "Current designation and target role cannot be the same.", variant: "destructive" });
+      return false;
+    }
+
+    if (currentDesignation.trim().toLowerCase() === targetCompany.trim().toLowerCase()) {
+      toast({ title: "Company Conflict", description: "Current designation and target company cannot be the same.", variant: "destructive" });
+      return false;
+    }
+
+    const allowedTypes = [
+      'Technical Interview',
+      'Behavioral Interview',
+      'System Design',
+      'Case Study',
+      'HR Round',
+      'Management Round',
+    ];
+    if (!allowedTypes.includes(interviewType)) {
+      toast({ title: "Invalid Interview Type", description: "Please select a valid interview type.", variant: "destructive" });
+      return false;
+    }
+
+    // if (!/\.(pdf|docx?)$/i.test(user.resumeUrl)) {
+    //   toast({ title: "Resume Format Error", description: "Resume must be a PDF, DOC, or DOCX file.", variant: "destructive" });
+    //   return false;
+    // }
+
     return true;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!validateForm() || !user?.email) {
-      if (!user?.email) {
-        toast({ title: "Authentication Error", description: "Could not find user email.", variant: "destructive" });
-      }
+    if (!validateForm()) return;
+    if (!user || !user.email) {
+      toast({ title: "Authentication Error", description: "User not found. Please log in again.", variant: "destructive" });
+      return;
+    }
+
+    // Fetch the latest resume_url from backend
+    let resumeUrl: string | null = null;
+    try {
+      resumeUrl = await fetchResumeUrl();
+    } catch (err) {
+      toast({
+        title: "Resume Mission",
+        description: "Could not verify your resume. Please try uploading a resume in your profile.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!resumeUrl || typeof resumeUrl !== 'string' ||
+        (!resumeUrl.startsWith('https://') && !resumeUrl.startsWith('http://'))) {
+      toast({
+        title: "Resume Missing or Invalid",
+        description: "Please upload a valid resume in your profile before creating a room.",
+        variant: "destructive",
+      });
       return;
     }
 
@@ -79,7 +162,7 @@ const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ open, onOpenChange })
       const analysisPayload = {
         targetRole: formData.targetRole,
         targetCompany: formData.targetCompany,
-        yearsOfExperience: formData.yearsOfExperience,
+        yearsOfExperience: formData.yearsOfExperience.toString(),
         currentDesignation: formData.currentDesignation,
         interviewType: formData.interviewType,
         sessionInterval: formData.sessionInterval ? Number(formData.sessionInterval) : undefined,
@@ -95,7 +178,7 @@ const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ open, onOpenChange })
         currentDesignation: formData.currentDesignation,
         targetRole: formData.targetRole,
         targetCompany: formData.targetCompany,
-        yearsOfExperience: formData.yearsOfExperience,
+        yearsOfExperience: formData.yearsOfExperience.toString(),
         sessionInterval: formData.sessionInterval ? Number(formData.sessionInterval) : undefined,
         interviewType: formData.interviewType,
         // Add any other required fields here if needed, excluding id and createdAt which backend handles

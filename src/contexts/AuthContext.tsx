@@ -66,7 +66,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (response.ok) {
         const data = await response.json();
-        setUser(data.user);
+        setUser({
+          ...data.user,
+          resumeUrl: data.user?.resume_url || data.resume_url,
+        });
       }
     } catch {
       // User not logged in or other error — ignore here
@@ -111,6 +114,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const data = await response.json();
 
       setUser({
+        ...data.user,
+        resumeUrl: data.user?.resume_url || data.resume_url,
         id: data.user_id.toString(),
         email: email,
         isProfileComplete: data.isProfileComplete || false,
@@ -143,6 +148,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const data = await response.json();
 
       setUser({
+        ...data.user,
+        resumeUrl: data.user?.resume_url || data.resume_url,
         id: data.user_id.toString(),
         email,
         mobile,
@@ -202,6 +209,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.log("Backend response data:", data);
 
       setUser({
+        ...data.user,
+        resumeUrl: data.user?.resume_url || data.resume_url,
         id: data.user_id.toString(),
         email: data.email,
         isProfileComplete: data.isProfileComplete || true,
