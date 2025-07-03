@@ -12,9 +12,6 @@ from backend.schemas import SessionIdList  # Your Pydantic model for payload val
 from backend.utils.jwt_auth import get_current_user   # Your auth dependency for user info
 from backend.utils.s3_client import s3_client
 
-from pydantic import BaseModel
-from typing import Optional
-
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
@@ -63,7 +60,7 @@ async def check_session_completion(
         for row in results:
             completed_sessions[row['session_id']] = {
                 "transcription_flag": bool(row['transcription_flag']),
-                "transcription": row['transcription']  # Potentially large, send carefully
+                "transcription": row['transcription']
             }
 
         response_data = []
@@ -139,24 +136,43 @@ async def get_sessions(current_user: Dict[str, Any] = Depends(get_current_user))
     cursor = None
     try:
         user_id = current_user.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
 
-        cursor.execute("""
-            SELECT i.interview_id, ifs.session_id, m.transcription_flag, m.transcription, i.target_role,
-                   i.target_company, i.interview_type, i.years_of_experience, i.current_designation, 
-                   i.created_at, i.status
+        # Subquery to get latest session per interview
+        query = """
+            SELECT 
+                i.interview_id, 
+                latest_ifs.session_id, 
+                m.transcription_flag, 
+                m.transcription, 
+                i.target_role,
+                i.target_company, 
+                i.interview_type, 
+                i.years_of_experience, 
+                i.current_designation, 
+                i.created_at, 
+                i.status
             FROM Interview i
-            JOIN InterviewSession ifs ON i.interview_id = ifs.interview_id
-            JOIN Meeting m ON ifs.session_id = m.session_id
-            JOIN LoginTrace lt ON i.log_id = lt.log_id
-            WHERE lt.user_id = %s
+            JOIN (
+                SELECT ifs.interview_id, MAX(ifs.session_id) AS session_id
+                FROM InterviewSession ifs
+                GROUP BY ifs.interview_id
+            ) AS latest_ifs ON i.interview_id = latest_ifs.interview_id
+            JOIN Meeting m ON latest_ifs.session_id = m.session_id
+            WHERE i.user_id = %s
             ORDER BY i.created_at DESC
-        """, (user_id,))
+        """
 
+        cursor.execute(query, (user_id,))
         rows = cursor.fetchall()
+
         sessions = []
         for row in rows:
+            created_at_iso = row["created_at"].isoformat() if hasattr(row["created_at"], "isoformat") else str(row["created_at"])
             sessions.append({
                 "id": row["session_id"],
                 "interview_id": row["interview_id"],
@@ -166,7 +182,7 @@ async def get_sessions(current_user: Dict[str, Any] = Depends(get_current_user))
                 "interviewType": row["interview_type"],
                 "yearsOfExperience": row["years_of_experience"],
                 "currentDesignation": row["current_designation"],
-                "createdAt": row["created_at"].isoformat(),
+                "createdAt": created_at_iso,
                 "hasCompletedInterview": bool(row["transcription_flag"]),
                 "transcript": row["transcription"],
                 "metrics": None,
@@ -178,77 +194,48 @@ async def get_sessions(current_user: Dict[str, Any] = Depends(get_current_user))
     except Exception as e:
         logger.error(f"Error retrieving sessions: {e}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail="Failed to fetch sessions")
+
     finally:
         if cursor:
             cursor.close()
         if conn and conn.is_connected():
             conn.close()
+
+
 
 @router.delete("/interview/{interview_id}")
 async def delete_interview(interview_id: int, current_user: Dict[str, Any] = Depends(get_current_user)):
     conn = None
     cursor = None
     try:
-        user_id = current_user.get("user_id")
+        user_id = int(current_user.get("user_id"))
+        interview_id = int(interview_id)
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Only delete if the interview belongs to the user
+        logger.info(f"Attempting to mark interview {interview_id} as deleted for user {user_id}")
+
         cursor.execute("""
-            DELETE i FROM Interview i
-            JOIN LoginTrace lt ON i.log_id = lt.log_id
-            WHERE i.interview_id = %s AND lt.user_id = %s
+            UPDATE Interview i
+            SET i.status = 'deleted'
+            WHERE i.interview_id = %s
+              AND EXISTS (
+                  SELECT 1 FROM LoginTrace lt
+                  WHERE lt.log_id = i.log_id
+                    AND lt.user_id = %s
+              )
         """, (interview_id, user_id))
         conn.commit()
+
+        logger.info(f"Rows affected by update: {cursor.rowcount}")
 
         if cursor.rowcount == 0:
             raise HTTPException(status_code=404, detail="Interview not found or not authorized to delete.")
 
-        return JSONResponse(content={"detail": "Interview deleted successfully."})
+        return JSONResponse(content={"detail": "Interview marked as deleted successfully."})
     except Exception as e:
-        logger.error(f"Error deleting interview: {e}\n{traceback.format_exc()}")
+        logger.error(f"Error deleting interview: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to delete interview")
-    finally:
-        if cursor:
-            cursor.close()
-        if conn and conn.is_connected():
-            conn.close()
-
-@router.delete("/sessions/{session_id}")
-async def delete_session(session_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
-    conn = None
-    cursor = None
-    try:
-        user_id = current_user.get("user_id")
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        # Find the interview_id for this session and user
-        cursor.execute("""
-            SELECT i.interview_id
-            FROM Interview i
-            JOIN InterviewSession s ON i.interview_id = s.interview_id
-            JOIN LoginTrace lt ON i.log_id = lt.log_id
-            WHERE s.session_id = %s AND lt.user_id = %s
-        """, (session_id, user_id))
-        result = cursor.fetchone()
-        if not result:
-            raise HTTPException(status_code=404, detail="Session not found or not authorized to delete.")
-
-        interview_id = result[0]
-
-        # Update the status to 'deleted'
-        cursor.execute("""
-            UPDATE Interview
-            SET status = 'deleted'
-            WHERE interview_id = %s
-        """, (interview_id,))
-        conn.commit()
-
-        return JSONResponse(content={"detail": "Session marked as deleted."})
-    except Exception as e:
-        logger.error(f"Error deleting session: {e}")
-        raise HTTPException(status_code=500, detail="Failed to delete session")
     finally:
         if cursor:
             cursor.close()
