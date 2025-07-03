@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react'; // Import useEffect
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +12,7 @@ import {
 import { useNavigate, Link } from "react-router-dom";
 import { toast } from "@/hooks/use-toast";
 import { Eye, EyeOff } from "lucide-react";
+// import datetime from 'datetime';
 
 const ForgotPassword = () => {
   const [email, setEmail] = useState("");
@@ -46,7 +46,7 @@ const ForgotPassword = () => {
     setIsLoading(true);
 
     try {
-      const res = await fetch("http://localhost:8000/forgot-password", {
+      const res = await fetch("http://localhost:8000/api/v1/auth/forgot-password", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -87,7 +87,7 @@ const ForgotPassword = () => {
     setIsLoading(true);
 
     try {
-      const res = await fetch("http://localhost:8000/verify-otp", {
+      const res = await fetch("http://localhost:8000/api/v1/auth/verify-otp", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -138,7 +138,7 @@ const ForgotPassword = () => {
     }
 
     try {
-      const res = await fetch("http://localhost:8000/reset-password", {
+      const res = await fetch("http://localhost:8000/api/v1/auth/reset-password", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
