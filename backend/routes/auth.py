@@ -19,6 +19,7 @@ from fastapi.responses import JSONResponse
 from backend.utils.s3_client import s3_client
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
+from datetime import datetime
   
 
 def get_email_transporter():
@@ -128,7 +129,7 @@ def log_login_trace(user_id: int, ip_address: str, status_str: str, location: st
         INSERT INTO LoginTrace (user_id, login_time, ip_address, login_status, location)
         VALUES (%s, %s, %s, %s, %s)
         """,
-        (user_id, datetime.datetime.utcnow(), ip_address, status_str, location)
+        (user_id, datetime.utcnow(), ip_address, status_str, location)
     )
     conn.commit()
     cursor.close()
@@ -243,9 +244,21 @@ async def google_auth_login(request: Request):
         user = get_user_by_email(email)
         if user:
             user_id = user["user_id"]
+
+            # ✅ Check if hash exists
+            if not user["hash_password"]:
+                # Optional default hash: user can still login via forgot-password
+                default_hash = hash_password("GoogleDefault@123")
+                create_user_hash(user_id, email, default_hash)
+
         else:
+            # User doesn't exist — create
             user_id = create_user(email=email)
             log_login_trace(user_id, request.client.host, "GOOGLE_SIGNUP")
+
+            # ✅ Also create default hash for new Google signup
+            default_hash = hash_password("GoogleDefault@123")
+            create_user_hash(user_id, email, default_hash)
 
         access_token = create_access_token(
             {
@@ -460,7 +473,7 @@ async def get_me(current_user: dict = Depends(get_current_user)):
 def generate_otp():
     return str(random.randint(100000, 999999))
 otp_storage = {}
-@router.post('/api/forgot-password')
+@router.post('/forgot-password')
 async def forgot_password(payload: ForgotPasswordPayload):
     email = payload.email
     db_conn = None
@@ -506,7 +519,7 @@ async def forgot_password(payload: ForgotPasswordPayload):
         if db_conn and db_conn.is_connected(): db_conn.close()
 
 
-@router.post('/api/verify-otp')
+@router.post('/verify-otp')
 async def verify_otp(payload: VerifyOtpPayload):
     email = payload.email
     otp = payload.otp
@@ -534,7 +547,7 @@ async def verify_otp(payload: VerifyOtpPayload):
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error.")
 
 
-@router.post('/api/reset-password')
+@router.post('/reset-password')
 async def reset_password(payload: ResetPasswordPayload):
     email = payload.email
     otp = payload.otp

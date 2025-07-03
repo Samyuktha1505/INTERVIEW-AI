@@ -53,11 +53,28 @@ interface InterviewContextType {
   ) => Promise<void>;
   getCompletedRooms: () => Room[];
   getPendingRooms: () => Room[];
+  clearError: () => void;
 }
 
-const InterviewContext = createContext<InterviewContextType | undefined>(
-  undefined
-);
+const InterviewContext = createContext<InterviewContextType | undefined>(undefined);
+
+// Helper function to normalize strings for comparison
+const normalizeString = (str: string | undefined): string => {
+  return str ? str.trim().toLowerCase().replace(/\s+/g, ' ') : '';
+};
+
+// Helper function to generate a unique key for room creation tracking
+const generateRoomKey = (roomData: Partial<Room>, userId?: string): string => {
+  return JSON.stringify({
+    userId,
+    targetRole: normalizeString(roomData.targetRole),
+    targetCompany: normalizeString(roomData.targetCompany),
+    interviewType: normalizeString(roomData.interviewType),
+    yearsOfExperience: normalizeString(roomData.yearsOfExperience),
+    currentDesignation: normalizeString(roomData.currentDesignation),
+    sessionInterval: roomData.sessionInterval,
+  });
+};
 
 export const InterviewProvider = ({ children }: { children: ReactNode }) => {
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -66,12 +83,12 @@ export const InterviewProvider = ({ children }: { children: ReactNode }) => {
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
 
   const { user, isLoading: authLoading } = useAuth();
-
-  // Track pending create keys to prevent duplicate creates with same data
   const pendingCreates = useRef<Set<string>>(new Set());
 
+  // Fetch rooms when user changes or auth loading completes
   useEffect(() => {
     let isMounted = true;
+    const controller = new AbortController();
 
     const fetchRooms = async () => {
       if (!user) return;
@@ -79,8 +96,6 @@ export const InterviewProvider = ({ children }: { children: ReactNode }) => {
       setLoading(true);
       setError(null);
       try {
-        console.log('➡️ Fetching rooms for user:', user.id);
-
         const data = await apiRequest<{ sessions: Room[] }>({
           endpoint: '/api/v1/sessions/',
           method: 'GET',
@@ -90,13 +105,11 @@ export const InterviewProvider = ({ children }: { children: ReactNode }) => {
           const sessions = Array.isArray(data.sessions) ? data.sessions : [];
           setRooms(sessions);
           setLoading(false);
-          console.log('✅ Rooms fetched:', sessions);
         }
       } catch (err) {
-        console.error('❌ Failed to fetch rooms:', err);
-        if (isMounted) {
+        if (isMounted && !controller.signal.aborted) {
           setRooms([]);
-          setError('Failed to fetch rooms');
+          setError('Failed to fetch rooms. Please try again later.');
           setLoading(false);
         }
       }
@@ -108,8 +121,13 @@ export const InterviewProvider = ({ children }: { children: ReactNode }) => {
 
     return () => {
       isMounted = false;
+      controller.abort();
     };
   }, [user, authLoading]);
+
+  const clearError = useCallback(() => {
+    setError(null);
+  }, []);
 
   const createRoom = async (
     roomData: Omit<
@@ -122,40 +140,60 @@ export const InterviewProvider = ({ children }: { children: ReactNode }) => {
       | 'interview_id'
     >
   ): Promise<string> => {
-    if (!user) throw new Error('User not authenticated');
-
-    // Generate a unique key to detect duplicate create calls with same data
-    const createKey = JSON.stringify({
-      targetRole: roomData.targetRole,
-      targetCompany: roomData.targetCompany,
-      interviewType: roomData.interviewType,
-      yearsOfExperience: roomData.yearsOfExperience,
-      currentDesignation: roomData.currentDesignation,
-      sessionInterval: roomData.sessionInterval,
-    });
-
-    if (pendingCreates.current.has(createKey)) {
-      console.warn('Duplicate createRoom call prevented:', createKey);
-      throw new Error('Room creation already in progress for this data');
+    if (!user) {
+      throw new Error('User not authenticated');
     }
 
-    if (isCreatingRoom) {
-      console.warn('Room creation already in progress globally');
-      throw new Error('Room creation already in progress');
+    // Normalize all strings for comparison
+    const normalizedRoomData = {
+      ...roomData,
+      targetRole: normalizeString(roomData.targetRole),
+      targetCompany: normalizeString(roomData.targetCompany),
+      interviewType: normalizeString(roomData.interviewType),
+      yearsOfExperience: normalizeString(roomData.yearsOfExperience),
+      currentDesignation: normalizeString(roomData.currentDesignation),
+    };
+
+    // Check for duplicates with more flexible comparison
+    const duplicateRoom = rooms.find((room) => {
+      return (
+        normalizeString(room.targetRole) === normalizedRoomData.targetRole &&
+        normalizeString(room.targetCompany) === normalizedRoomData.targetCompany &&
+        normalizeString(room.interviewType) === normalizedRoomData.interviewType &&
+        normalizeString(room.yearsOfExperience) === normalizedRoomData.yearsOfExperience &&
+        normalizeString(room.currentDesignation) === normalizedRoomData.currentDesignation &&
+        room.sessionInterval === normalizedRoomData.sessionInterval &&
+        room.userId === user.id &&
+        room.status !== 'deleted'
+      );
+    });
+
+    if (duplicateRoom) {
+      const errorMessage = `You already have a room for ${roomData.targetRole} at ${roomData.targetCompany} with the same configuration.`;
+      setError(errorMessage);
+      throw new Error(errorMessage);
+    }
+
+    const createKey = generateRoomKey(roomData, user.id);
+
+    if (pendingCreates.current.has(createKey)) {
+      const errorMessage = 'Room creation already in progress for this configuration.';
+      setError(errorMessage);
+      throw new Error(errorMessage);
     }
 
     pendingCreates.current.add(createKey);
     setIsCreatingRoom(true);
+    setError(null);
 
     try {
-      console.log('➡️ Creating room with data:', roomData);
       const analysisPayload = {
-        targetRole: roomData.targetRole,
-        targetCompany: roomData.targetCompany,
-        yearsOfExperience: roomData.yearsOfExperience.toString(),
-        currentDesignation: roomData.currentDesignation,
-        interviewType: roomData.interviewType,
-        sessionInterval: roomData.sessionInterval,
+        targetRole: normalizedRoomData.targetRole,
+        targetCompany: normalizedRoomData.targetCompany,
+        yearsOfExperience: normalizedRoomData.yearsOfExperience,
+        currentDesignation: normalizedRoomData.currentDesignation,
+        interviewType: normalizedRoomData.interviewType,
+        sessionInterval: normalizedRoomData.sessionInterval,
       };
 
       const result = await analyzeResume(analysisPayload);
@@ -164,7 +202,7 @@ export const InterviewProvider = ({ children }: { children: ReactNode }) => {
       const interviewId = result?.interview_id;
 
       if (!sessionId || !interviewId) {
-        throw new Error('Failed to get session ID or interview ID from analysis');
+        throw new Error('Failed to create room. Please try again.');
       }
 
       const newRoom: Room = {
@@ -176,20 +214,20 @@ export const InterviewProvider = ({ children }: { children: ReactNode }) => {
         hasCompletedInterview: false,
         transcript: null,
         metrics: null,
+        status: 'active',
       };
 
       setRooms((prev) => {
-        const exists = prev.some(room => room.id === newRoom.id);
-        if (exists) {
-          return prev.map(room => (room.id === newRoom.id ? newRoom : room));
-        } else {
-          return [...prev, newRoom];
-        }
+        const exists = prev.some((room) => room.id === newRoom.id);
+        return exists
+          ? prev.map((room) => (room.id === newRoom.id ? newRoom : room))
+          : [...prev, newRoom];
       });
-      console.log('✅ Room added or updated:', newRoom);
+
       return sessionId;
     } catch (err) {
-      console.error('❌ Failed to create room:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to create room';
+      setError(errorMessage);
       throw err;
     } finally {
       pendingCreates.current.delete(createKey);
@@ -198,29 +236,17 @@ export const InterviewProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const getRoom = useCallback(
-    (roomId: string): Room | undefined => {
-      const found = rooms.find(
-        (room) => room.id === roomId && room.interview_id !== '0'
-      );
-      console.log(`🔍 getRoom(${roomId}):`, found);
-      return found;
-    },
+    (roomId: string): Room | undefined =>
+      rooms.find((room) => room.id === roomId && room.interview_id !== '0'),
     [rooms]
   );
 
   const deleteRoom = async (roomId: string): Promise<void> => {
     try {
       const roomToDelete = rooms.find((room) => room.id === roomId);
-      if (!roomToDelete) {
-        console.warn(`Room with id ${roomId} not found.`);
-        return;
+      if (!roomToDelete || !roomToDelete.interview_id) {
+        throw new Error('Room not found');
       }
-      if (!roomToDelete.interview_id) {
-        console.warn(`Room with id ${roomId} has no interview_id.`);
-        return;
-      }
-
-      console.log(`➡️ Deleting interview with interview_id: ${roomToDelete.interview_id}`);
 
       await apiRequest({
         endpoint: `/api/v1/sessions/interview/${roomToDelete.interview_id}`,
@@ -228,15 +254,15 @@ export const InterviewProvider = ({ children }: { children: ReactNode }) => {
       });
 
       setRooms((prev) => prev.filter((room) => room.id !== roomId));
-      console.log(`✅ Interview with interview_id ${roomToDelete.interview_id} deleted successfully.`);
     } catch (error) {
-      console.error('❌ Failed to delete interview:', error);
+      console.error('Failed to delete interview:', error);
+      setError('Failed to delete room. Please try again.');
+      throw error;
     }
   };
 
   const markRoomAsCompleted = async (roomId: string): Promise<void> => {
     try {
-      console.log('➡️ Marking room as completed:', roomId);
       const updatedRoom = await apiRequest<Room>({
         endpoint: `/api/v1/sessions/${roomId}`,
         method: 'PUT',
@@ -245,9 +271,8 @@ export const InterviewProvider = ({ children }: { children: ReactNode }) => {
       setRooms((prev) =>
         prev.map((room) => (room.id === roomId ? updatedRoom : room))
       );
-      console.log('✅ Room marked as completed:', updatedRoom);
     } catch (err) {
-      console.error('❌ Failed to mark room as completed:', err);
+      setError('Failed to mark room as completed');
       throw err;
     }
   };
@@ -257,7 +282,6 @@ export const InterviewProvider = ({ children }: { children: ReactNode }) => {
     updates: Partial<Omit<Room, 'id'>>
   ): Promise<void> => {
     try {
-      console.log('➡️ Updating room:', roomId, 'with:', updates);
       const updatedRoom = await apiRequest<Room>({
         endpoint: `/api/v1/sessions/${roomId}`,
         method: 'PUT',
@@ -266,28 +290,29 @@ export const InterviewProvider = ({ children }: { children: ReactNode }) => {
       setRooms((prev) =>
         prev.map((room) => (room.id === roomId ? updatedRoom : room))
       );
-      console.log('✅ Room updated:', updatedRoom);
     } catch (err) {
-      console.error('❌ Failed to update room:', err);
+      setError('Failed to update room');
       throw err;
     }
   };
 
-  const getCompletedRooms = useCallback(() => {
-    const completed = rooms.filter(
-      (room) => room.hasCompletedInterview && room.interview_id !== '0'
-    );
-    console.log('🔎 Completed rooms:', completed);
-    return completed;
-  }, [rooms]);
+  const getCompletedRooms = useCallback(
+    () => rooms.filter((room) => 
+      room.hasCompletedInterview && 
+      room.interview_id !== '0' &&
+      room.status !== 'deleted'
+    ),
+    [rooms]
+  );
 
-  const getPendingRooms = useCallback(() => {
-    const pending = rooms.filter(
-      (room) => !room.hasCompletedInterview && room.interview_id !== '0'
-    );
-    console.log('🔎 Pending rooms:', pending);
-    return pending;
-  }, [rooms]);
+  const getPendingRooms = useCallback(
+    () => rooms.filter((room) => 
+      !room.hasCompletedInterview && 
+      room.interview_id !== '0' &&
+      room.status !== 'deleted'
+    ),
+    [rooms]
+  );
 
   return (
     <InterviewContext.Provider
@@ -303,6 +328,7 @@ export const InterviewProvider = ({ children }: { children: ReactNode }) => {
         updateRoom,
         getCompletedRooms,
         getPendingRooms,
+        clearError,
       }}
     >
       {children}
@@ -310,7 +336,7 @@ export const InterviewProvider = ({ children }: { children: ReactNode }) => {
   );
 };
 
-export const useInterview = () => {
+export const useInterview = (): InterviewContextType => {
   const context = useContext(InterviewContext);
   if (!context) {
     throw new Error('useInterview must be used within an InterviewProvider');

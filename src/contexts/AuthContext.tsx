@@ -24,7 +24,7 @@ interface User {
 
 interface AuthContextType {
   user: User | null;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<any>;
   signup: (
     email: string,
     password: string,
@@ -66,6 +66,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (response.ok) {
         const data = await response.json();
+        console.log("✅ User session restored:", data);
         setUser({
           id: data.user?.id?.toString() || data.user_id?.toString(),
           email: data.user?.email || "",
@@ -81,8 +82,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           isProfileComplete: data.isProfileComplete ?? true,
         });
       }
-    } catch {
-      // No need to set error here
+    } catch (err) {
+      console.warn("⚠️ Failed to restore session:", err);
     } finally {
       setIsLoading(false);
     }
@@ -94,24 +95,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const handleResponseError = async (response: Response) => {
     if (!response.ok) {
-      try {
-        const contentType = response.headers.get("Content-Type");
-        if (contentType?.includes("application/json")) {
-          const errorData = await response.json();
-          throw new Error(errorData.detail || response.statusText);
-        } else {
-          const text = await response.text();
-          throw new Error(text || response.statusText);
-        }
-      } catch {
-        throw new Error("Unexpected error occurred.");
+      const contentType = response.headers.get("Content-Type");
+      if (contentType?.includes("application/json")) {
+        const errorData = await response.json();
+        const detail = errorData.detail || errorData.message || response.statusText;
+        throw new Error(detail);
+      } else {
+        const text = await response.text();
+        throw new Error(text || response.statusText);
       }
     }
   };
 
   const login = async (email: string, password: string) => {
+    console.log("🔐 [AuthContext] login() called with:", email);
     setIsLoading(true);
     setError(null);
+
     try {
       const response = await fetch(`${BASE_AUTH_URL}/login`, {
         method: "POST",
@@ -137,7 +137,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         countryCode: data.user?.countryCode,
         isProfileComplete: data.isProfileComplete ?? false,
       });
+
+      console.log("✅ Login successful. User:", data.user);
+      return data;
     } catch (err) {
+      console.error("❌ Login error:", err);
       setError(err instanceof Error ? err.message : "Login failed");
       throw err;
     } finally {
@@ -173,6 +177,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isProfileComplete: false,
       });
     } catch (err) {
+      console.error("❌ Signup error:", err);
       setError(err instanceof Error ? err.message : "Signup failed");
       throw err;
     } finally {
@@ -182,12 +187,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = async () => {
     try {
-      await fetch(`/api/v1/logging/logout`, {
+      await fetch(`http://localhost:8000/api/v1/logging/logout`, {
         method: "POST",
         credentials: "include",
       });
     } catch (err) {
-      console.warn("Logout request failed:", err);
+      console.warn("⚠️ Logout request failed:", err);
     } finally {
       setUser(null);
       setError(null);
@@ -199,7 +204,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const loginWithGoogle = async (credential: string) => {
-    console.log("loginWithGoogle called with credential:", credential);
+    console.log("🧠 loginWithGoogle() called with credential:", credential);
     setIsLoading(true);
     setError(null);
 
@@ -237,6 +242,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       setAccessToken(data.token || null);
     } catch (err) {
+      console.error("❌ Google login failed:", err);
       setError(err instanceof Error ? err.message : "Google login failed");
       throw err;
     } finally {
@@ -255,6 +261,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const data = await response.json();
       setAccessToken(data.access_token);
     } catch (err) {
+      console.error("🔁 Refresh token error:", err);
       logout();
       throw err;
     }
