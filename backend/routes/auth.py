@@ -243,9 +243,21 @@ async def google_auth_login(request: Request):
         user = get_user_by_email(email)
         if user:
             user_id = user["user_id"]
+
+            # ✅ Check if hash exists
+            if not user["hash_password"]:
+                # Optional default hash: user can still login via forgot-password
+                default_hash = hash_password("GoogleDefault@123")
+                create_user_hash(user_id, email, default_hash)
+
         else:
+            # User doesn't exist — create
             user_id = create_user(email=email)
             log_login_trace(user_id, request.client.host, "GOOGLE_SIGNUP")
+
+            # ✅ Also create default hash for new Google signup
+            default_hash = hash_password("GoogleDefault@123")
+            create_user_hash(user_id, email, default_hash)
 
         access_token = create_access_token(
             {

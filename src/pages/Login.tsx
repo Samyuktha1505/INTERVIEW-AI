@@ -23,28 +23,36 @@ const Login = () => {
   const { user, login } = useAuth();
   const navigate = useNavigate();
 
-  // 🚫 Removed localStorage check. Just use user state from context
   useEffect(() => {
     if (user) {
+      console.log("✅ User already logged in, redirecting...");
       navigate("/dashboard");
     }
   }, [user, navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log("📨 Submitting login form with:", email, password);
     setIsLoading(true);
 
-    const emailRegex = /^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/;
+    const emailRegex = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
     if (!emailRegex.test(email)) {
-      toast({ title: "Invalid Email", description: "Please enter a valid email address.", variant: "destructive" });
-      return false;
+      toast({
+        title: "Invalid Email",
+        description: "Please enter a valid email address.",
+        variant: "destructive",
+      });
+      setIsLoading(false);
+      return;
     }
 
     try {
-      await login(email, password); // this should fetch and set user via cookies
+      await login(email, password);
       toast({ title: "Login successful", description: "Welcome back!" });
+      console.log("✅ Login successful. Redirecting...");
       navigate("/dashboard");
     } catch (err) {
+      console.error("❌ Login error:", err);
       toast({
         title: "Login failed",
         description: "Invalid email or password",
@@ -62,10 +70,8 @@ const Login = () => {
 
       const res = await fetch("http://localhost:8000/api/v1/auth/google-auth-login", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        credentials: "include", // ✅ allow cookie to be set by backend
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ token }),
       });
 
@@ -74,7 +80,7 @@ const Login = () => {
       toast({ title: "Login successful", description: "Welcome back!" });
       navigate("/dashboard");
     } catch (err) {
-      console.error("Google login error:", err);
+      console.error("❌ Google login error:", err);
       toast({
         title: "Error",
         description: "Failed to login with Google",
@@ -111,6 +117,7 @@ const Login = () => {
             <span className="mx-4 text-muted-foreground text-sm">or sign in with email</span>
             <div className="flex-grow h-px bg-muted-foreground/30" />
           </div>
+
           <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
