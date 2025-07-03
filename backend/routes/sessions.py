@@ -6,11 +6,14 @@ import traceback
 import json
 import decimal
 import datetime
+import os
 
 from backend.db.mysql import get_db_connection
 from backend.schemas import SessionIdList  # Your Pydantic model for payload validation
 from backend.utils.jwt_auth import get_current_user   # Your auth dependency for user info
 from backend.utils.s3_client import s3_client
+from backend.utils.prompts import generate_summary_prompt
+import google.generativeai as genai
 
 from pydantic import BaseModel
 from typing import Optional
@@ -254,3 +257,85 @@ async def delete_session(session_id: str, current_user: Dict[str, Any] = Depends
             cursor.close()
         if conn and conn.is_connected():
             conn.close()
+
+def get_gemini_model():
+    """Initializes and returns the Gemini Pro model."""
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY is not set.")
+    genai.configure(api_key=api_key)
+    return genai.GenerativeModel('gemini-pro')
+
+class SummarizePayload(BaseModel):
+    transcript: str
+
+@router.post("/{session_id}/summarize", status_code=status.HTTP_200_OK)
+async def summarize_and_save_transcript(
+    session_id: str,
+    payload: SummarizePayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    model: genai.GenerativeModel = Depends(get_gemini_model)
+):
+    conn = None
+    cursor = None
+    try:
+        user_id = current_user.get("user_id")
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        # 1. Verify user has access to the session
+        cursor.execute("""
+            SELECT i.interview_id FROM Interview i
+            JOIN InterviewSession ifs ON i.interview_id = ifs.interview_id
+            JOIN LoginTrace lt ON i.log_id = lt.log_id
+            WHERE ifs.session_id = %s AND lt.user_id = %s
+        """, (session_id, user_id))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=403, detail="User not authorized for this session.")
+
+        # 2. Use the transcript from the payload, with a specific check for empty content
+        full_transcript = payload.transcript
+        summary_text = ""
+
+        if not full_transcript or not full_transcript.strip():
+            logger.info(f"Session {session_id} ended with no transcript. Saving placeholder.")
+            summary_text = "The user ended the session before any conversation was recorded."
+        else:
+            # 3. Generate summary using Gemini
+            summary_prompt = generate_summary_prompt(full_transcript)
+            response = model.generate_content(summary_prompt)
+            
+            # 4. Validate summary and define fallback
+            try:
+                summary_text = response.text
+            except ValueError:
+                logger.warning(f"Gemini response for session {session_id} was blocked. Falling back to full transcript.")
+                summary_text = full_transcript
+
+            if not summary_text or not summary_text.strip():
+                logger.warning(f"Gemini generated an empty summary for session {session_id}. Falling back to full transcript.")
+                summary_text = full_transcript
+
+        # 5. UPSERT into Meeting table (primarily an UPDATE)
+        cursor.execute(
+            "UPDATE Meeting SET transcription = %s, transcription_flag = 1 WHERE session_id = %s",
+            (summary_text, session_id)
+        )
+        if cursor.rowcount == 0:
+            # This is a fallback in case the row didn't exist, which is not the expected flow.
+            logger.warning(f"No existing row in Meeting for session_id {session_id}. Creating a new one.")
+            cursor.execute(
+                "INSERT INTO Meeting (session_id, transcription, transcription_flag) VALUES (%s, %s, 1)",
+                (session_id, summary_text)
+            )
+        conn.commit()
+
+        return JSONResponse(content={"detail": "Summary saved successfully.", "summary": summary_text})
+
+    except Exception as e:
+        logger.error(f"Error during summarization for session {session_id}: {e}\n{traceback.format_exc()}")
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if cursor: cursor.close()
+        if conn and conn.is_connected(): conn.close()

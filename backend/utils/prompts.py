@@ -100,3 +100,23 @@ def generate_metrics_prompt(transcript_text: str) -> str:
     Ensure your output is only the JSON object, without any surrounding text or markdown.
     """
     return prompt
+
+def generate_summary_prompt(transcript_text: str) -> str:
+    """
+    Generates a prompt for the LLM to summarize an interview transcript.
+    """
+    prompt = f"""
+    You are an expert in summarizing professional conversations. Your task is to create a concise and neutral summary of the following interview transcript.
+
+    The summary should capture the key topics discussed, the main questions asked by the interviewer, and the core points of the candidate's responses. It should be a factual representation of the conversation flow, not an evaluation of the candidate's performance.
+
+    Do not include any personal opinions or judgments. The output should be a single block of text.
+
+    Transcript:
+    <Transcript>
+    {transcript_text}
+    </Transcript>
+
+    Please provide the summary now.
+    """
+    return prompt

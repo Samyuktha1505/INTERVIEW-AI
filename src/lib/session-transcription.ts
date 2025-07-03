@@ -1,5 +1,6 @@
 import { Content, Part } from "@google/genai";
 import { saveTranscription } from '../services/transcriptionService'; // Import the new service
+import { summarizeAndSaveTranscript } from '../services/interviewService';
 
 export class SessionTranscription {
   private static currentSessionId: string | null = null;
@@ -144,6 +145,20 @@ export class SessionTranscription {
   }
 
   /**
+   * Directly adds a finalized text entry to the buffer, for non-ASR sources like typed input.
+   * @param author 'user' or 'agent'
+   * @param text The text content to add.
+   */
+  static addFinalizedText(author: 'user' | 'agent', text: string) {
+    if (!this.currentSessionId || !this.hasContent(text)) return;
+
+    const timestamp = new Date().toLocaleString();
+    const entry = `[${timestamp}] ${author.toUpperCase()}:\n${text.trim()}\n\n`;
+    this.transcriptionBuffer.push(entry);
+    console.log(`[SessionTranscription] Added finalized text from ${author}: "${text}"`);
+  }
+
+  /**
    * Saves the current accumulated transcription to the database.
    * This method is called by the auto-flush and at the end of the session.
    */
@@ -153,16 +168,19 @@ export class SessionTranscription {
       return;
     }
 
-    const currentFullTranscription = this.transcriptionBuffer.join('');
-    if (!this.hasContent(currentFullTranscription)) {
+    // The buffer is already an array of strings (segments).
+    const segmentsToSave = [...this.transcriptionBuffer];
+    if (segmentsToSave.length === 0) {
         console.log("No meaningful transcription content to save yet.");
         return;
     }
 
     try {
-      console.log(`Saving transcription to database for session ${this.currentSessionId}...`);
-      await saveTranscription(this.currentSessionId, currentFullTranscription);
+      console.log(`Saving ${segmentsToSave.length} transcription segments to database for session ${this.currentSessionId}...`);
+      await saveTranscription(this.currentSessionId, segmentsToSave);
       console.log("Transcription successfully saved to database.");
+      // Since segments are now saved, we can clear the buffer to avoid re-saving.
+      this.transcriptionBuffer = [];
     } catch (error) {
       console.error('Failed to save transcription to the database:', error);
       // Depending on severity, you might want to retry or alert the user.
@@ -179,16 +197,28 @@ export class SessionTranscription {
         return;
     }
 
+    const sessionId = this.currentSessionId; // Store before resetting
     this.stopAutoFlush(); // Stop periodic saving
 
+    // Save the raw transcript first
     await this.flushCurrentChunksToBuffer(); // Ensure any last pending chunks are added to the buffer
-
     const footer = `\n=== Session Ended: ${new Date().toLocaleString()} ===\n`;
     this.transcriptionBuffer.push(footer);
+    await this.saveToDatabase(); // Perform one final save of the raw log
 
-    await this.saveToDatabase(); // Perform one final save
+    const fullTranscript = this.getCurrentTranscription(); // Get the complete transcript text
 
-    console.log(`Session ${this.currentSessionId} ended and transcription finalized.`);
+    try {
+      // Now, trigger the summarization process on the backend
+      console.log(`Triggering summarization for session ${sessionId}...`);
+      await summarizeAndSaveTranscript(sessionId, fullTranscript);
+      console.log(`Summarization for session ${sessionId} completed successfully.`);
+    } catch (error) {
+      console.error(`Failed to summarize transcript for session ${sessionId}:`, error);
+      // Decide on fallback behavior. Maybe alert the user or log for manual retry.
+    }
+
+    console.log(`Session ${sessionId} ended and transcription finalized.`);
 
     // Reset session state for the next run
     this.currentSessionId = null;

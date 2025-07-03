@@ -5,9 +5,9 @@ interface SaveResponse {
   message: string;
 }
 
-export const saveTranscription = async (sessionId: string, transcriptionText: string): Promise<SaveResponse> => {
+export const saveTranscription = async (sessionId: string, transcriptSegments: string[]): Promise<SaveResponse> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/v1/transcripts/`, {
+    const response = await fetch(`${API_BASE_URL}/v1/transcriptions/transcripts`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -15,7 +15,7 @@ export const saveTranscription = async (sessionId: string, transcriptionText: st
       credentials: 'include',
       body: JSON.stringify({
         session_id: sessionId,
-        transcription_text: transcriptionText,
+        transcript: transcriptSegments,
       }),
     });
 

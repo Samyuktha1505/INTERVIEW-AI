@@ -137,3 +137,25 @@ export const analyzeResume = async (
     body: analysisData,
   });
 };
+
+export const summarizeAndSaveTranscript = async (sessionId: string, transcript: string): Promise<any> => {
+  console.log(`[summarizeAndSaveTranscript] Sending transcript for session ${sessionId}. Length: ${transcript.length}`);
+  try {
+    const response = await httpClient.post(`/api/v1/sessions/${sessionId}/summarize`, {
+      transcript: transcript,
+    });
+    
+    console.log(`[summarizeAndSaveTranscript] Response status: ${response.status}`);
+    const responseData = await response.json();
+    console.log('[summarizeAndSaveTranscript] Response data:', responseData);
+
+    if (!response.ok) {
+      console.error('[summarizeAndSaveTranscript] Response not OK.', responseData);
+      throw new Error(responseData.detail || 'Failed to summarize transcript.');
+    }
+    return responseData;
+  } catch (error) {
+    console.error('Error in summarizeAndSaveTranscript service call:', error);
+    throw error;
+  }
+};

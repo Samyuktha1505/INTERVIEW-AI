@@ -201,11 +201,11 @@ async def analyze_resume(
             datetime.datetime.utcnow()
         ))
 
-        # Insert Meeting record with transcription_flag False
+        # Insert Meeting record with transcription_flag False and an empty string for transcription
         cursor.execute("""
-            INSERT INTO Meeting (session_id, transcription_flag)
-            VALUES (%s, %s)
-        """, (session_id, False))
+            INSERT INTO Meeting (session_id, transcription, transcription_flag)
+            VALUES (%s, %s, %s)
+        """, (session_id, '', False))
 
         db_conn.commit()
 

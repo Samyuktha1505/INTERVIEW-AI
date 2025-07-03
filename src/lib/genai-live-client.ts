@@ -435,11 +435,11 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
       if ("modelTurn" in serverContent && serverContent.modelTurn) {
         const modelTurn: Content = serverContent.modelTurn;
 
-        // --- REMOVED ---
-        // SessionTranscription.addTranscription('assistant', SessionTranscription.parseContentToText(modelTurn));
-        // This was redundant as outputTranscription should be handled by handleOutputTranscription.
-        // If your server *only* sends modelTurn and no outputTranscription for spoken output,
-        // you might need a different strategy to get this into SessionTranscription (e.g., a "final turn" method).
+        // Ensure AI's text responses are captured for transcription.
+        const textContent = SessionTranscription.parseContentToText(modelTurn);
+        if (textContent) {
+          SessionTranscription.addFinalizedText('agent', textContent);
+        }
 
         let currentProcessingParts: Part[] = modelTurn.parts || [];
 
@@ -518,15 +518,15 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
     const clientContentToLog = { turns: Array.isArray(parts) ? parts : [parts], turnComplete };
     this.log(`client.send`, clientContentToLog);
 
-    // --- REMOVED ---
-    // This was redundant as inputTranscription from the server should drive the transcription saving for user's speech.
-    // If you are sending *text* directly from UI without ASR, and want to capture it in transcription,
-    // you would need a new dedicated method in SessionTranscription like `addFinalUserMessageText(text: string)`.
-    // For now, assuming real-time transcription from server `inputTranscription` is the source.
-    // const userContent: Content = {
-    //   role: 'user',
-    //   parts: Array.isArray(parts) ? parts : [parts]
-    // };
-    // SessionTranscription.addTranscription('user', SessionTranscription.parseContentToText(userContent));
+    // --- RESTORED ---
+    // Capture user-typed text and add it directly to the transcription.
+    const userContent: Content = {
+      role: 'user',
+      parts: Array.isArray(parts) ? parts : [parts]
+    };
+    const userText = SessionTranscription.parseContentToText(userContent);
+    if (userText) {
+      SessionTranscription.addFinalizedText('user', userText);
+    }
   }
 }
