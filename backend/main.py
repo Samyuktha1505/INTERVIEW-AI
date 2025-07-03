@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from backend.routes import auth, resume, sessions, metrics, logout, transcriptions
+from backend.routes import auth, resume, sessions, metrics, logout
 
 app = FastAPI(title="InterviewBot API")
 
@@ -54,7 +54,6 @@ app.include_router(resume.router, prefix=f"{API_PREFIX}/resume", tags=["Resume"]
 app.include_router(logout.router, prefix=f"{API_PREFIX}/logging", tags=["Logout"])
 app.include_router(sessions.router, prefix=f"{API_PREFIX}/sessions", tags=["Sessions"])
 app.include_router(metrics.router, prefix=f"{API_PREFIX}/metrics", tags=["Metrics"])
-app.include_router(transcriptions.router, prefix=f"{API_PREFIX}/transcriptions", tags=["Transcriptions"])
 
 # Run the app
 if __name__ == "__main__":

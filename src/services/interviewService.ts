@@ -1,3 +1,5 @@
+import apiClient from '../api/httpClient'; // Import the configured axios client
+
 const API_BASE_URL = 'http://localhost:8000';
 
 // -----------------------------
@@ -115,13 +117,10 @@ export const apiRequest = async <T = any>({
 export const checkCompletedSessions = async (
   roomIds: string[]
 ): Promise<Set<string>> => {
-  const data = await apiRequest<CompletionResponse>({
-    endpoint: '/api/v1/sessions/check-completion',
-    method: 'POST',
-    body: { session_ids: roomIds },
+  const response = await apiClient.post<CompletionResponse>('/api/v1/sessions/check-completion', {
+    session_ids: roomIds,
   });
-
-  const completed = data.sessions.filter(session => session.is_completed);
+  const completed = response.data.sessions.filter(session => session.is_completed);
   return new Set(completed.map(session => session.session_id));
 };
 
@@ -131,31 +130,31 @@ export const checkCompletedSessions = async (
 export const analyzeResume = async (
   analysisData: ResumeAnalysisData
 ): Promise<ResumeAnalysisResponse> => {
-  return apiRequest<ResumeAnalysisResponse>({
-    endpoint: '/api/v1/resume/analyze_resume',
-    method: 'POST',
-    body: analysisData,
-  });
+  const response = await apiClient.post<ResumeAnalysisResponse>('/api/v1/resume/analyze_resume', analysisData);
+  return response.data;
 };
 
 export const summarizeAndSaveTranscript = async (sessionId: string, transcript: string): Promise<any> => {
   console.log(`[summarizeAndSaveTranscript] Sending transcript for session ${sessionId}. Length: ${transcript.length}`);
   try {
-    const response = await httpClient.post(`/api/v1/sessions/${sessionId}/summarize`, {
+    const response = await apiClient.post(`/api/v1/sessions/${sessionId}/summarize`, {
       transcript: transcript,
     });
     
     console.log(`[summarizeAndSaveTranscript] Response status: ${response.status}`);
-    const responseData = await response.json();
+    const responseData = response.data;
     console.log('[summarizeAndSaveTranscript] Response data:', responseData);
 
-    if (!response.ok) {
+    if (response.status < 200 || response.status >= 300) {
       console.error('[summarizeAndSaveTranscript] Response not OK.', responseData);
       throw new Error(responseData.detail || 'Failed to summarize transcript.');
     }
     return responseData;
   } catch (error) {
     console.error('Error in summarizeAndSaveTranscript service call:', error);
+    if (error.response) {
+      throw new Error(error.response.data.detail || 'An unknown error occurred during the API call.');
+    }
     throw error;
   }
 };

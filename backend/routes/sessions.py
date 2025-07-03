@@ -7,6 +7,7 @@ import json
 import decimal
 import datetime
 import os
+from pydantic import BaseModel
 
 from backend.db.mysql import get_db_connection
 from backend.schemas import SessionIdList  # Your Pydantic model for payload validation
@@ -14,9 +15,6 @@ from backend.utils.jwt_auth import get_current_user   # Your auth dependency for
 from backend.utils.s3_client import s3_client
 from backend.utils.prompts import generate_summary_prompt
 import google.generativeai as genai
-
-from pydantic import BaseModel
-from typing import Optional
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -66,7 +64,7 @@ async def check_session_completion(
         for row in results:
             completed_sessions[row['session_id']] = {
                 "transcription_flag": bool(row['transcription_flag']),
-                "transcription": row['transcription']  # Potentially large, send carefully
+                "transcription": row['transcription']
             }
 
         response_data = []
@@ -142,24 +140,43 @@ async def get_sessions(current_user: Dict[str, Any] = Depends(get_current_user))
     cursor = None
     try:
         user_id = current_user.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
 
-        cursor.execute("""
-            SELECT i.interview_id, ifs.session_id, m.transcription_flag, m.transcription, i.target_role,
-                   i.target_company, i.interview_type, i.years_of_experience, i.current_designation, 
-                   i.created_at, i.status
+        # Subquery to get latest session per interview
+        query = """
+            SELECT 
+                i.interview_id, 
+                latest_ifs.session_id, 
+                m.transcription_flag, 
+                m.transcription, 
+                i.target_role,
+                i.target_company, 
+                i.interview_type, 
+                i.years_of_experience, 
+                i.current_designation, 
+                i.created_at, 
+                i.status
             FROM Interview i
-            JOIN InterviewSession ifs ON i.interview_id = ifs.interview_id
-            JOIN Meeting m ON ifs.session_id = m.session_id
-            JOIN LoginTrace lt ON i.log_id = lt.log_id
-            WHERE lt.user_id = %s
+            JOIN (
+                SELECT ifs.interview_id, MAX(ifs.session_id) AS session_id
+                FROM InterviewSession ifs
+                GROUP BY ifs.interview_id
+            ) AS latest_ifs ON i.interview_id = latest_ifs.interview_id
+            JOIN Meeting m ON latest_ifs.session_id = m.session_id
+            WHERE i.user_id = %s
             ORDER BY i.created_at DESC
-        """, (user_id,))
+        """
 
+        cursor.execute(query, (user_id,))
         rows = cursor.fetchall()
+
         sessions = []
         for row in rows:
+            created_at_iso = row["created_at"].isoformat() if hasattr(row["created_at"], "isoformat") else str(row["created_at"])
             sessions.append({
                 "id": row["session_id"],
                 "interview_id": row["interview_id"],
@@ -169,7 +186,7 @@ async def get_sessions(current_user: Dict[str, Any] = Depends(get_current_user))
                 "interviewType": row["interview_type"],
                 "yearsOfExperience": row["years_of_experience"],
                 "currentDesignation": row["current_designation"],
-                "createdAt": row["created_at"].isoformat(),
+                "createdAt": created_at_iso,
                 "hasCompletedInterview": bool(row["transcription_flag"]),
                 "transcript": row["transcription"],
                 "metrics": None,
@@ -181,35 +198,47 @@ async def get_sessions(current_user: Dict[str, Any] = Depends(get_current_user))
     except Exception as e:
         logger.error(f"Error retrieving sessions: {e}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail="Failed to fetch sessions")
+
     finally:
         if cursor:
             cursor.close()
         if conn and conn.is_connected():
             conn.close()
 
+
+
 @router.delete("/interview/{interview_id}")
 async def delete_interview(interview_id: int, current_user: Dict[str, Any] = Depends(get_current_user)):
     conn = None
     cursor = None
     try:
-        user_id = current_user.get("user_id")
+        user_id = int(current_user.get("user_id"))
+        interview_id = int(interview_id)
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Only delete if the interview belongs to the user
+        logger.info(f"Attempting to mark interview {interview_id} as deleted for user {user_id}")
+
         cursor.execute("""
-            DELETE i FROM Interview i
-            JOIN LoginTrace lt ON i.log_id = lt.log_id
-            WHERE i.interview_id = %s AND lt.user_id = %s
+            UPDATE Interview i
+            SET i.status = 'deleted'
+            WHERE i.interview_id = %s
+              AND EXISTS (
+                  SELECT 1 FROM LoginTrace lt
+                  WHERE lt.log_id = i.log_id
+                    AND lt.user_id = %s
+              )
         """, (interview_id, user_id))
         conn.commit()
+
+        logger.info(f"Rows affected by update: {cursor.rowcount}")
 
         if cursor.rowcount == 0:
             raise HTTPException(status_code=404, detail="Interview not found or not authorized to delete.")
 
-        return JSONResponse(content={"detail": "Interview deleted successfully."})
+        return JSONResponse(content={"detail": "Interview marked as deleted successfully."})
     except Exception as e:
-        logger.error(f"Error deleting interview: {e}\n{traceback.format_exc()}")
+        logger.error(f"Error deleting interview: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to delete interview")
     finally:
         if cursor:
@@ -273,8 +302,7 @@ class SummarizePayload(BaseModel):
 async def summarize_and_save_transcript(
     session_id: str,
     payload: SummarizePayload,
-    current_user: Dict[str, Any] = Depends(get_current_user),
-    model: genai.GenerativeModel = Depends(get_gemini_model)
+    current_user: Dict[str, Any] = Depends(get_current_user)
 ):
     conn = None
     cursor = None
@@ -293,48 +321,28 @@ async def summarize_and_save_transcript(
         if not cursor.fetchone():
             raise HTTPException(status_code=403, detail="User not authorized for this session.")
 
-        # 2. Use the transcript from the payload, with a specific check for empty content
-        full_transcript = payload.transcript
-        summary_text = ""
-
-        if not full_transcript or not full_transcript.strip():
+        # 2. Get transcript from payload and set a placeholder if empty
+        transcript_text = payload.transcript
+        if not transcript_text or not transcript_text.strip():
             logger.info(f"Session {session_id} ended with no transcript. Saving placeholder.")
-            summary_text = "The user ended the session before any conversation was recorded."
-        else:
-            # 3. Generate summary using Gemini
-            summary_prompt = generate_summary_prompt(full_transcript)
-            response = model.generate_content(summary_prompt)
-            
-            # 4. Validate summary and define fallback
-            try:
-                summary_text = response.text
-            except ValueError:
-                logger.warning(f"Gemini response for session {session_id} was blocked. Falling back to full transcript.")
-                summary_text = full_transcript
+            transcript_text = "The user ended the session before any conversation was recorded."
 
-            if not summary_text or not summary_text.strip():
-                logger.warning(f"Gemini generated an empty summary for session {session_id}. Falling back to full transcript.")
-                summary_text = full_transcript
-
-        # 5. UPSERT into Meeting table (primarily an UPDATE)
+        # 3. Save the raw transcript directly to the Meeting table
         cursor.execute(
             "UPDATE Meeting SET transcription = %s, transcription_flag = 1 WHERE session_id = %s",
-            (summary_text, session_id)
+            (transcript_text, session_id)
         )
         if cursor.rowcount == 0:
-            # This is a fallback in case the row didn't exist, which is not the expected flow.
-            logger.warning(f"No existing row in Meeting for session_id {session_id}. Creating a new one.")
-            cursor.execute(
-                "INSERT INTO Meeting (session_id, transcription, transcription_flag) VALUES (%s, %s, 1)",
-                (session_id, summary_text)
-            )
+            logger.warning(f"No existing row in Meeting for session_id {session_id}. This should not happen.")
+        
         conn.commit()
 
-        return JSONResponse(content={"detail": "Summary saved successfully.", "summary": summary_text})
+        return JSONResponse(content={"detail": "Transcript saved successfully.", "transcript": transcript_text})
 
     except Exception as e:
-        logger.error(f"Error during summarization for session {session_id}: {e}\n{traceback.format_exc()}")
-        conn.rollback()
+        logger.error(f"Error during transcript save for session {session_id}: {e}\n{traceback.format_exc()}")
+        if conn:
+            conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         if cursor: cursor.close()

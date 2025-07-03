@@ -18,6 +18,7 @@ export interface Question {
 
 export interface ResumeAnalysisResponse {
   session_id: string; 
+  interview_id:string;
   Questionnaire_prompt: Question[];
 }
 

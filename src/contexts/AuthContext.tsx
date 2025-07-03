@@ -67,12 +67,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (response.ok) {
         const data = await response.json();
         setUser({
-          ...data.user,
-          resumeUrl: data.user?.resume_url || data.resume_url,
+          id: data.user?.id?.toString() || data.user_id?.toString(),
+          email: data.user?.email || "",
+          firstName: data.user?.firstName,
+          lastName: data.user?.lastName,
+          mobile: data.user?.mobile,
+          gender: data.user?.gender,
+          dateOfBirth: data.user?.dateOfBirth,
+          collegeName: data.user?.collegeName,
+          resumeUrl: data.user?.resume_url || data.resume_url || undefined,
+          yearsOfExperience: data.user?.yearsOfExperience,
+          countryCode: data.user?.countryCode,
+          isProfileComplete: data.isProfileComplete ?? true,
         });
       }
     } catch {
-      // User not logged in or other error — ignore here
+      // No need to set error here
     } finally {
       setIsLoading(false);
     }
@@ -114,11 +124,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const data = await response.json();
 
       setUser({
-        ...data.user,
-        resumeUrl: data.user?.resume_url || data.resume_url,
-        id: data.user_id.toString(),
-        email: email,
-        isProfileComplete: data.isProfileComplete || false,
+        id: data.user?.id?.toString() || data.user_id?.toString(),
+        email: data.user?.email || email,
+        firstName: data.user?.firstName,
+        lastName: data.user?.lastName,
+        mobile: data.user?.mobile,
+        gender: data.user?.gender,
+        dateOfBirth: data.user?.dateOfBirth,
+        collegeName: data.user?.collegeName,
+        resumeUrl: data.user?.resume_url || data.resume_url || undefined,
+        yearsOfExperience: data.user?.yearsOfExperience,
+        countryCode: data.user?.countryCode,
+        isProfileComplete: data.isProfileComplete ?? false,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
@@ -148,12 +165,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const data = await response.json();
 
       setUser({
-        ...data.user,
-        resumeUrl: data.user?.resume_url || data.resume_url,
-        id: data.user_id.toString(),
-        email,
+        id: data.user?.id?.toString() || data.user_id?.toString(),
+        email: data.user?.email || email,
         mobile,
         countryCode,
+        resumeUrl: data.user?.resume_url || data.resume_url || undefined,
         isProfileComplete: false,
       });
     } catch (err) {
@@ -179,7 +195,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const updateProfile = (profileData: Partial<User>) => {
-    if (!user) return;
     setUser((prev) => (prev ? { ...prev, ...profileData } : null));
   };
 
@@ -202,22 +217,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         credentials: "include",
       });
 
-      console.log("Response status:", response.status);
       await handleResponseError(response);
-
       const data = await response.json();
-      console.log("Backend response data:", data);
 
       setUser({
-        ...data.user,
-        resumeUrl: data.user?.resume_url || data.resume_url,
-        id: data.user_id.toString(),
-        email: data.email,
-        isProfileComplete: data.isProfileComplete || true,
+        id: data.user?.id?.toString() || data.user_id?.toString(),
+        email: data.user?.email || data.email,
+        firstName: data.user?.firstName,
+        lastName: data.user?.lastName,
+        mobile: data.user?.mobile,
+        gender: data.user?.gender,
+        dateOfBirth: data.user?.dateOfBirth,
+        collegeName: data.user?.collegeName,
+        resumeUrl: data.user?.resume_url || data.resume_url || undefined,
+        yearsOfExperience: data.user?.yearsOfExperience,
+        countryCode: data.user?.countryCode,
+        isProfileComplete: data.isProfileComplete ?? true,
       });
+
       setAccessToken(data.token || null);
     } catch (err) {
-      console.error("Google login error:", err);
       setError(err instanceof Error ? err.message : "Google login failed");
       throw err;
     } finally {

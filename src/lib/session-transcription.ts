@@ -1,5 +1,4 @@
 import { Content, Part } from "@google/genai";
-import { saveTranscription } from '../services/transcriptionService'; // Import the new service
 import { summarizeAndSaveTranscript } from '../services/interviewService';
 
 export class SessionTranscription {
@@ -10,9 +9,6 @@ export class SessionTranscription {
   private static lastUserTranscriptionTime: number = 0;
   private static lastAssistantTranscriptionTime: number = 0;
   private static readonly CHUNK_DEBOUNCE_TIME_MS = 1000; // Time in milliseconds before a chunk is considered "complete"
-  private static readonly AUTO_FLUSH_INTERVAL_MS = 5000; // How often to auto-save to backend (e.g., every 5 seconds)
-
-  private static _flushIntervalId: ReturnType<typeof setInterval> | null = null; // To manage the periodic save interval
 
   /**
    * Helper to check if text content is meaningful.
@@ -41,36 +37,6 @@ export class SessionTranscription {
     // Add initial header to the buffer
     const timestamp = new Date().toLocaleString();
     this.transcriptionBuffer.push(`=== Session Transcription ===\nSession ID: ${this.currentSessionId}\nStarted: ${timestamp}\n\n`);
-
-    // Start periodic auto-flushing to the database
-    this.startAutoFlush();
-  }
-
-  /**
-   * Starts the periodic saving of transcription data to the database.
-   */
-  private static startAutoFlush() {
-    if (this._flushIntervalId) {
-      clearInterval(this._flushIntervalId); // Clear any existing interval
-    }
-    this._flushIntervalId = setInterval(async () => {
-      if (this.currentSessionId) {
-        console.log(`[Auto-Flush] Flushing transcription for session ${this.currentSessionId}...`);
-        await this.flushCurrentChunksToBuffer(); // Ensure latest chunks are in main buffer
-        await this.saveToDatabase();
-      }
-    }, this.AUTO_FLUSH_INTERVAL_MS);
-  }
-
-  /**
-   * Stops the periodic saving interval. Call this when the session truly ends.
-   */
-  private static stopAutoFlush() {
-    if (this._flushIntervalId) {
-      clearInterval(this._flushIntervalId);
-      this._flushIntervalId = null;
-      console.log(`Stopped auto-flushing for session ${this.currentSessionId}.`);
-    }
   }
 
   /**
@@ -79,8 +45,6 @@ export class SessionTranscription {
    */
   private static async flushCurrentChunksToBuffer() {
     if (this.hasContent(this.currentUserChunk)) {
-      // Use a consistent timestamp logic (e.g., when the chunk started or when it was flushed)
-      // For simplicity, using current time for flushing remaining chunk.
       const timestamp = new Date().toLocaleString();
       const entry = `[${timestamp}] USER:\n${this.currentUserChunk.trim()}\n\n`;
       this.transcriptionBuffer.push(entry);
@@ -102,18 +66,14 @@ export class SessionTranscription {
     if (!this.currentSessionId || !this.hasContent(text)) return;
 
     const currentTime = Date.now();
-    // If a new chunk starts or enough time has passed for the previous chunk
     if (currentTime - this.lastUserTranscriptionTime > this.CHUNK_DEBOUNCE_TIME_MS) {
       if (this.hasContent(this.currentUserChunk)) {
-        // Flush the completed previous chunk to the main buffer
-        const timestamp = new Date(this.lastUserTranscriptionTime).toLocaleString(); // Timestamp of when the chunk was last updated
+        const timestamp = new Date(this.lastUserTranscriptionTime).toLocaleString();
         const entry = `[${timestamp}] USER:\n${this.currentUserChunk.trim()}\n\n`;
         this.transcriptionBuffer.push(entry);
       }
-      // Start a new chunk
       this.currentUserChunk = text;
     } else {
-      // Continue accumulating the current chunk
       this.currentUserChunk += ' ' + text;
     }
     this.lastUserTranscriptionTime = currentTime;
@@ -127,18 +87,14 @@ export class SessionTranscription {
     if (!this.currentSessionId || !this.hasContent(text)) return;
 
     const currentTime = Date.now();
-    // If a new chunk starts or enough time has passed for the previous chunk
     if (currentTime - this.lastAssistantTranscriptionTime > this.CHUNK_DEBOUNCE_TIME_MS) {
       if (this.hasContent(this.currentAssistantChunk)) {
-        // Flush the completed previous chunk to the main buffer
-        const timestamp = new Date(this.lastAssistantTranscriptionTime).toLocaleString(); // Timestamp of when the chunk was last updated
+        const timestamp = new Date(this.lastAssistantTranscriptionTime).toLocaleString();
         const entry = `[${timestamp}] ASSISTANT:\n${this.currentAssistantChunk.trim()}\n\n`;
         this.transcriptionBuffer.push(entry);
       }
-      // Start a new chunk
       this.currentAssistantChunk = text;
     } else {
-      // Continue accumulating the current chunk
       this.currentAssistantChunk += ' ' + text;
     }
     this.lastAssistantTranscriptionTime = currentTime;
@@ -159,37 +115,7 @@ export class SessionTranscription {
   }
 
   /**
-   * Saves the current accumulated transcription to the database.
-   * This method is called by the auto-flush and at the end of the session.
-   */
-  private static async saveToDatabase() {
-    if (!this.currentSessionId) {
-      console.warn("Attempted to save transcription without an active session ID.");
-      return;
-    }
-
-    // The buffer is already an array of strings (segments).
-    const segmentsToSave = [...this.transcriptionBuffer];
-    if (segmentsToSave.length === 0) {
-        console.log("No meaningful transcription content to save yet.");
-        return;
-    }
-
-    try {
-      console.log(`Saving ${segmentsToSave.length} transcription segments to database for session ${this.currentSessionId}...`);
-      await saveTranscription(this.currentSessionId, segmentsToSave);
-      console.log("Transcription successfully saved to database.");
-      // Since segments are now saved, we can clear the buffer to avoid re-saving.
-      this.transcriptionBuffer = [];
-    } catch (error) {
-      console.error('Failed to save transcription to the database:', error);
-      // Depending on severity, you might want to retry or alert the user.
-    }
-  }
-
-  /**
-   * Finalizes the session, flushes any remaining chunks, saves to database, and resets state.
-   * Call this when the meeting officially ends.
+   * Finalizes the session, flushes any remaining chunks, and saves the final transcript.
    */
   static async endSession() {
     if (!this.currentSessionId) {
@@ -197,30 +123,37 @@ export class SessionTranscription {
         return;
     }
 
-    const sessionId = this.currentSessionId; // Store before resetting
-    this.stopAutoFlush(); // Stop periodic saving
+    const sessionId = this.currentSessionId;
 
-    // Save the raw transcript first
-    await this.flushCurrentChunksToBuffer(); // Ensure any last pending chunks are added to the buffer
+    // DIAGNOSTIC LOGGING: Check the state of the chunks *before* flushing.
+    console.log(`[SessionTranscription] endSession called. State before flush:`);
+    console.log(`  - currentUserChunk: "${this.currentUserChunk}"`);
+    console.log(`  - currentAssistantChunk: "${this.currentAssistantChunk}"`);
+
+    // Flush any final, un-debounced speech chunks.
+    await this.flushCurrentChunksToBuffer(); 
+    
+    // DIAGNOSTIC LOGGING: Check the buffer *after* flushing.
+    console.log(`[SessionTranscription] State after flush. Buffer length: ${this.transcriptionBuffer.length}`);
+    
     const footer = `\n=== Session Ended: ${new Date().toLocaleString()} ===\n`;
     this.transcriptionBuffer.push(footer);
-    await this.saveToDatabase(); // Perform one final save of the raw log
 
-    const fullTranscript = this.getCurrentTranscription(); // Get the complete transcript text
-
+    // Get the full transcript BEFORE clearing the buffer.
+    const fullTranscript = this.getCurrentTranscription();
+    
+    // Send the final, complete transcript to the backend.
     try {
-      // Now, trigger the summarization process on the backend
-      console.log(`Triggering summarization for session ${sessionId}...`);
+      console.log(`Saving final transcript for session ${sessionId}...`);
       await summarizeAndSaveTranscript(sessionId, fullTranscript);
-      console.log(`Summarization for session ${sessionId} completed successfully.`);
+      console.log(`Final transcript for session ${sessionId} saved successfully.`);
     } catch (error) {
-      console.error(`Failed to summarize transcript for session ${sessionId}:`, error);
-      // Decide on fallback behavior. Maybe alert the user or log for manual retry.
+      console.error(`Failed to save final transcript for session ${sessionId}:`, error);
     }
 
     console.log(`Session ${sessionId} ended and transcription finalized.`);
 
-    // Reset session state for the next run
+    // Reset all session state for the next run.
     this.currentSessionId = null;
     this.transcriptionBuffer = [];
     this.currentUserChunk = '';
@@ -233,9 +166,6 @@ export class SessionTranscription {
    * Returns the current full transcription assembled from the buffer.
    */
   static getCurrentTranscription(): string {
-    // Optionally, you might want to also include currentUserChunk/currentAssistantChunk here
-    // if you want the *absolute latest* text that hasn't even been debounced yet.
-    // For now, this just returns what's in the main buffer.
     return this.transcriptionBuffer.join('');
   }
 
