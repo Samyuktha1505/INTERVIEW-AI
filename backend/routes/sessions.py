@@ -33,19 +33,20 @@ def convert_decimal(obj):
 from typing import List
 from pydantic import BaseModel
 
-class InterviewIdList(BaseModel):
-    interview_ids: List[int]
+class SessionIdList(BaseModel):
+    session_ids: List[str]
+
 
 @router.post("/check-completion")
-async def check_interview_completion(
-    payload: InterviewIdList,
+async def check_session_completion(
+    payload: SessionIdList,
     current_user: Dict[str, Any] = Depends(get_current_user)
 ):
-    interview_ids = payload.interview_ids
+    session_ids = payload.session_ids
     user_id_from_token = current_user.get("user_id")
 
-    if not interview_ids:
-        raise HTTPException(status_code=400, detail="No interview IDs provided.")
+    if not session_ids:
+        raise HTTPException(status_code=400, detail="No session IDs provided.")
 
     db_conn = None
     cursor = None
@@ -54,71 +55,50 @@ async def check_interview_completion(
         db_conn = get_db_connection()
         cursor = db_conn.cursor(dictionary=True)
 
-        # Step 1: Verify these interviews belong to the current user
-        placeholders = ','.join(['%s'] * len(interview_ids))
-        query_verify = f"""
-            SELECT interview_id FROM Interview
-            WHERE interview_id IN ({placeholders}) AND user_id = %s
-        """
-        cursor.execute(query_verify, tuple(interview_ids) + (user_id_from_token,))
-        valid_interviews = [row['interview_id'] for row in cursor.fetchall()]
-        if not valid_interviews:
-            raise HTTPException(status_code=403, detail="No valid interviews found for this user.")
-
-        # Step 2: Fetch sessions for these interviews
-        placeholders = ','.join(['%s'] * len(valid_interviews))
-        query_sessions = f"""
-            SELECT session_id, interview_id FROM InterviewSession
-            WHERE interview_id IN ({placeholders})
-        """
-        cursor.execute(query_sessions, tuple(valid_interviews))
-        sessions = cursor.fetchall()  # list of dicts with session_id and interview_id
-
-        if not sessions:
-            # No sessions found for these interviews
-            return JSONResponse(content={"sessions": []})
-
-        session_ids = [s['session_id'] for s in sessions]
-
-        # Step 3: Fetch meeting completion status for these session_ids
+        # Step 1: Verify these sessions belong to the current user by joining InterviewSession and Interview and LoginTrace
         placeholders = ','.join(['%s'] * len(session_ids))
+        query_verify = f"""
+            SELECT s.session_id
+            FROM InterviewSession s
+            JOIN Interview i ON s.interview_id = i.interview_id
+            JOIN LoginTrace lt ON i.log_id = lt.log_id
+            WHERE s.session_id IN ({placeholders}) AND lt.user_id = %s
+        """
+        cursor.execute(query_verify, tuple(session_ids) + (user_id_from_token,))
+        valid_sessions = [row['session_id'] for row in cursor.fetchall()]
+        if not valid_sessions:
+            raise HTTPException(status_code=403, detail="No valid sessions found for this user.")
+
+        # Step 2: Fetch meeting completion status for these session_ids
+        placeholders = ','.join(['%s'] * len(valid_sessions))
         query_meeting = f"""
             SELECT session_id, transcription_flag, transcription FROM Meeting
             WHERE session_id IN ({placeholders})
         """
-        cursor.execute(query_meeting, tuple(session_ids))
+        cursor.execute(query_meeting, tuple(valid_sessions))
         meeting_data = cursor.fetchall()
 
+        # Map session_id -> meeting info
         meeting_map = {m['session_id']: m for m in meeting_data}
 
-        # Step 4: Prepare response per interview_id
-        # Group sessions by interview_id and mark if any session is completed
-        from collections import defaultdict
-        interview_sessions = defaultdict(list)
-        for s in sessions:
-            interview_sessions[s['interview_id']].append(s['session_id'])
-
+        # Step 3: Prepare response per session_id
         response_data = []
-        for interview_id in valid_interviews:
-            sessions_for_interview = interview_sessions.get(interview_id, [])
-            # Check if any session has transcription_flag true
-            is_completed = any(
-                meeting_map.get(sess_id, {}).get('transcription_flag') for sess_id in sessions_for_interview
-            )
-            # Optionally, you can include transcripts or more details per session
+        for session_id in valid_sessions:
+            meeting = meeting_map.get(session_id, {})
+            is_completed = bool(meeting.get('transcription_flag'))
             response_data.append({
-                "interview_id": interview_id,
-                "is_completed": bool(is_completed),
-                "session_ids": sessions_for_interview,
+                "session_id": session_id,
+                "is_completed": is_completed,
+                "transcription": meeting.get('transcription'),
             })
 
-        return JSONResponse(content={"interviews": response_data})
+        return JSONResponse(content={"sessions": response_data})
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error checking interview completion: {e}\n{traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail="Internal error checking interview completion.")
+        logger.error(f"Error checking session completion: {e}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail="Internal error checking session completion.")
     finally:
         if cursor:
             cursor.close()
@@ -127,12 +107,13 @@ async def check_interview_completion(
 
             
 @router.get("/analysis/{interview_id}")
-async def get_analysis(interview_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
+async def get_analysis_by_interview(interview_id: str, current_user: dict = Depends(get_current_user)):
     """
     Fetch analysis data for the given interview ID if the current user owns the interview.
     """
     conn = None
     cursor = None
+
     try:
         user_id = current_user.get("user_id")
         if not user_id:
@@ -141,22 +122,21 @@ async def get_analysis(interview_id: str, current_user: Dict[str, Any] = Depends
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
 
-        query = """
+        # Verify interview ownership and get prompt_example_questions by interview_id
+        cursor.execute("""
             SELECT i.prompt_example_questions
             FROM Interview i
             JOIN LoginTrace lt ON i.log_id = lt.log_id
             WHERE i.interview_id = %s AND lt.user_id = %s
             LIMIT 1
-        """
+        """, (interview_id, user_id))
 
-        cursor.execute(query, (interview_id, user_id))
-        analysis_row = cursor.fetchone()
-
-        if not analysis_row or not analysis_row.get("prompt_example_questions"):
+        row = cursor.fetchone()
+        if not row or not row.get("prompt_example_questions"):
             raise HTTPException(status_code=404, detail="Analysis data not found or access denied.")
 
-        questionnaire_prompt = json.loads(analysis_row["prompt_example_questions"])
-        
+        questionnaire_prompt = json.loads(row["prompt_example_questions"])
+
         return JSONResponse(content={"Questionnaire_prompt": questionnaire_prompt})
 
     except HTTPException:
@@ -169,7 +149,6 @@ async def get_analysis(interview_id: str, current_user: Dict[str, Any] = Depends
             cursor.close()
         if conn and conn.is_connected():
             conn.close()
-
 
 @router.get("/")
 async def get_sessions(current_user: Dict[str, Any] = Depends(get_current_user)):
@@ -284,7 +263,7 @@ async def delete_interview(interview_id: int, current_user: Dict[str, Any] = Dep
         if conn and conn.is_connected():
             conn.close()
 
-@router.delete("/sessions/{session_id}")
+@router.delete("/{session_id}")
 async def delete_session(session_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
     conn = None
     cursor = None

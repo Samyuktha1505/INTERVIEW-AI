@@ -9,14 +9,14 @@ from backend.utils.prompts import generate_metrics_prompt
 from backend.utils.functions import extract_metrics_from_json
 from backend.utils.jwt_auth import get_current_user
 
-from google import genai  # Your LLM client
+import google.generativeai as genai  # Your LLM client
 from backend.config import MODEL_ID  # Make sure your model_id is configured in config.py
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-@router.post("/v1/metrics/{session_id}")
+@router.post("/{session_id}")
 async def generate_metrics(
     session_id: str, 
     current_user: Dict[str, Any] = Depends(get_current_user)
@@ -55,8 +55,8 @@ async def generate_metrics(
 
         prompt = generate_metrics_prompt(transcript_text)
 
-        model = genai.GenerativeModel(MODEL_ID)
-        response = await model.generate_content_async(prompt)
+        model = genai.GenerativeModel(model_name=MODEL_ID)
+        response = model.generate_content(prompt)
         raw_metrics_output = response.text
         logger.info(f"LLM response for metrics received for session {session_id}.")
 

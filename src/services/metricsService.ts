@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://localhost:8000'; // NOTE: This uses port 8000
+const API_BASE_URL = 'http://localhost:8000/api'; // NOTE: This uses port 8000
 
 // This interface should match the structure of the 'Metrics' object returned by the FastAPI backend
 export interface Metrics {
@@ -28,6 +28,7 @@ export const generateAndFetchMetrics = async (sessionId: string): Promise<Metric
       headers: {
         'Content-Type': 'application/json',
       },
+      credentials: 'include',
     });
 
     if (!response.ok) {

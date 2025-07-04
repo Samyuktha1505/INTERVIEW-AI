@@ -27,7 +27,7 @@ import { toast } from "@/hooks/use-toast";
 import CreateRoomModal from "../components/CreateRoomModal";
 import { ReportModal } from "../components/ReportModal";
 import { generateAndFetchMetrics, Metrics } from "../services/metricsService";
-import { checkCompletedInterview } from "../services/interviewService";
+import { checkCompletedSessions } from "../services/interviewService";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
 const Dashboard = () => {
@@ -63,7 +63,7 @@ const Dashboard = () => {
   useEffect(() => {
     if (userRooms.length > 0) {
       const roomIds = userRooms.map((room) => room.id);
-      checkCompletedInterview(roomIds).then((completedIds) => {
+      checkCompletedSessions(roomIds).then((completedIds) => {
         setCompletedRoomIds(completedIds);
       });
     }

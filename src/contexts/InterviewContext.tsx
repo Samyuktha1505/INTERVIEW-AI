@@ -12,7 +12,7 @@ import { analyzeResume } from '../services/resumeAnalysis';
 import { apiRequest } from '../services/interviewService';
 
 export interface Room {
-  id: string; // unique id, same as interviewId from backend
+  id: string;
   userId?: string;
   targetRole: string;
   targetCompany: string;
@@ -52,16 +52,15 @@ interface InterviewContextType {
   getCompletedRooms: () => Room[];
   getPendingRooms: () => Room[];
   clearError: () => void;
+  refetchRooms: () => Promise<void>; // ✅ Added
 }
 
 const InterviewContext = createContext<InterviewContextType | undefined>(undefined);
 
-// Normalize strings helper
 const normalizeString = (str: string | undefined): string => {
   return str ? str.trim().toLowerCase().replace(/\s+/g, ' ') : '';
 };
 
-// Generate unique key for room creation tracking
 const generateRoomKey = (roomData: Partial<Room>, userId?: string): string => {
   return JSON.stringify({
     userId,
@@ -83,45 +82,31 @@ export const InterviewProvider = ({ children }: { children: ReactNode }) => {
   const { user, isLoading: authLoading } = useAuth();
   const pendingCreates = useRef<Set<string>>(new Set());
 
-  // Fetch rooms on user/auth load
+  const fetchRooms = useCallback(async () => {
+    if (!user) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await apiRequest<{ sessions: Room[] }>({
+        endpoint: '/api/v1/sessions/',
+        method: 'GET',
+      });
+
+      const sessions = Array.isArray(data.sessions) ? data.sessions : [];
+      setRooms(sessions);
+    } catch {
+      setRooms([]);
+      setError('Failed to fetch rooms. Please try again later.');
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
   useEffect(() => {
-    let isMounted = true;
-    const controller = new AbortController();
-
-    const fetchRooms = async () => {
-      if (!user) return;
-
-      setLoading(true);
-      setError(null);
-      try {
-        const data = await apiRequest<{ sessions: Room[] }>({
-          endpoint: '/api/v1/sessions/',
-          method: 'GET',
-        });
-
-        if (isMounted) {
-          const sessions = Array.isArray(data.sessions) ? data.sessions : [];
-          setRooms(sessions);
-          setLoading(false);
-        }
-      } catch {
-        if (isMounted && !controller.signal.aborted) {
-          setRooms([]);
-          setError('Failed to fetch rooms. Please try again later.');
-          setLoading(false);
-        }
-      }
-    };
-
     if (!authLoading && user) {
       fetchRooms();
     }
-
-    return () => {
-      isMounted = false;
-      controller.abort();
-    };
-  }, [user, authLoading]);
+  }, [user, authLoading, fetchRooms]);
 
   const clearError = useCallback(() => {
     setError(null);
@@ -150,7 +135,6 @@ export const InterviewProvider = ({ children }: { children: ReactNode }) => {
       currentDesignation: normalizeString(roomData.currentDesignation),
     };
 
-    // Check duplicate
     const duplicateRoom = rooms.find((room) => {
       return (
         normalizeString(room.targetRole) === normalizedRoomData.targetRole &&
@@ -200,7 +184,7 @@ export const InterviewProvider = ({ children }: { children: ReactNode }) => {
       }
 
       const newRoom: Room = {
-        id: interviewId,              // <-- here you wanted `id` instead of `interview_id`
+        id: interviewId,
         userId: user.id,
         ...roomData,
         createdAt: new Date().toISOString(),
@@ -291,21 +275,13 @@ export const InterviewProvider = ({ children }: { children: ReactNode }) => {
 
   const getCompletedRooms = useCallback(
     () =>
-      rooms.filter(
-        (room) =>
-          room.hasCompletedInterview &&
-          room.status !== 'deleted'
-      ),
+      rooms.filter((room) => room.hasCompletedInterview && room.status !== 'deleted'),
     [rooms]
   );
 
   const getPendingRooms = useCallback(
     () =>
-      rooms.filter(
-        (room) =>
-          !room.hasCompletedInterview &&
-          room.status !== 'deleted'
-      ),
+      rooms.filter((room) => !room.hasCompletedInterview && room.status !== 'deleted'),
     [rooms]
   );
 
@@ -324,6 +300,7 @@ export const InterviewProvider = ({ children }: { children: ReactNode }) => {
         getCompletedRooms,
         getPendingRooms,
         clearError,
+        refetchRooms: fetchRooms, // ✅ Returned here
       }}
     >
       {children}

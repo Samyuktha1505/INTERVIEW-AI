@@ -1,4 +1,4 @@
-import apiClient from '../api/httpClient'; // Import the configured axios client
+import apiClient from '../api/httpClient'; // Axios instance with cookies
 
 const API_BASE_URL = 'http://localhost:8000';
 
@@ -48,7 +48,7 @@ interface StartSessionResponse {
 
 function getAuthHeaders(): HeadersInit {
   return {
-    'Content-Type': 'application/json'
+    'Content-Type': 'application/json',
   };
 }
 
@@ -72,7 +72,7 @@ async function handleApiError(response: Response): Promise<never> {
 }
 
 // -----------------------------
-// Generic API Request
+// Generic API Request with fetch (cookies included)
 // -----------------------------
 
 export const apiRequest = async <T = any>({
@@ -87,7 +87,7 @@ export const apiRequest = async <T = any>({
       const response = await fetch(`${API_BASE_URL}${endpoint}`, {
         method,
         headers: getAuthHeaders(),
-        credentials: 'include', // Include cookies for auth
+        credentials: 'include', // ✅ Send cookies
         body: body ? JSON.stringify(body) : undefined,
       });
 
@@ -116,17 +116,22 @@ export const apiRequest = async <T = any>({
 // -----------------------------
 
 /**
- * ✅ Check which sessions are completed
+ * ✅ Check which sessions are completed (AFTER session creation only)
  */
-export const checkCompletedInterview = async (
-  roomIds: string[]
+export const checkCompletedSessions = async (
+  sessionIds: string[]
 ): Promise<Set<string>> => {
-  const numericIds = roomIds.map(id => Number(id));
+  if (!Array.isArray(sessionIds) || sessionIds.length === 0 || sessionIds.some(id => typeof id !== 'string')) {
+    console.warn('Skipping checkCompletedSessions: no valid session IDs');
+    return new Set();
+  }
+
   const data = await apiRequest<CompletionResponse>({
     endpoint: '/api/v1/sessions/check-completion',
     method: 'POST',
-    body: { interview_ids: numericIds },
+    body: { session_ids: sessionIds }, // ✅ Correct key
   });
+
   const completed = data.sessions.filter(session => session.is_completed);
   return new Set(completed.map(session => session.session_id));
 };
@@ -137,35 +142,45 @@ export const checkCompletedInterview = async (
 export const analyzeResume = async (
   analysisData: ResumeAnalysisData
 ): Promise<ResumeAnalysisResponse> => {
-  const response = await apiClient.post<ResumeAnalysisResponse>('/api/v1/resume/analyze_resume', analysisData);
+  const response = await apiClient.post<ResumeAnalysisResponse>(
+    '/api/v1/resume/analyze_resume',
+    analysisData,
+    { withCredentials: true } // ✅ Axios with cookie support
+  );
   return response.data;
 };
 
-export const summarizeAndSaveTranscript = async (sessionId: string, transcript: string): Promise<any> => {
-  console.log(`[summarizeAndSaveTranscript] Sending transcript for session ${sessionId}. Length: ${transcript.length}`);
+/**
+ * ✅ Summarize transcript and save
+ */
+export const summarizeAndSaveTranscript = async (
+  sessionId: string,
+  transcript: string
+): Promise<any> => {
   try {
-    const response = await apiClient.post(`/api/v1/sessions/${sessionId}/summarize`, {
-      transcript: transcript,
-    });
-    
-    console.log(`[summarizeAndSaveTranscript] Response status: ${response.status}`);
-    const responseData = response.data;
-    console.log('[summarizeAndSaveTranscript] Response data:', responseData);
+    const response = await apiClient.post(
+      `/api/v1/sessions/${sessionId}/summarize`,
+      { transcript },
+      { withCredentials: true } // ✅ Axios with cookie support
+    );
 
     if (response.status < 200 || response.status >= 300) {
-      console.error('[summarizeAndSaveTranscript] Response not OK.', responseData);
-      throw new Error(responseData.detail || 'Failed to summarize transcript.');
+      throw new Error(response.data?.detail || 'Failed to summarize transcript.');
     }
-    return responseData;
-  } catch (error) {
-    console.error('Error in summarizeAndSaveTranscript service call:', error);
+
+    return response.data;
+  } catch (error: any) {
+    console.error('Error in summarizeAndSaveTranscript:', error);
     if (error.response) {
-      throw new Error(error.response.data.detail || 'An unknown error occurred during the API call.');
+      throw new Error(error.response.data.detail || 'Unknown error occurred.');
     }
     throw error;
   }
 };
 
+/**
+ * ✅ Create a new interview session
+ */
 export const createInterviewSession = async (
   interviewId: string | number
 ): Promise<string> => {
