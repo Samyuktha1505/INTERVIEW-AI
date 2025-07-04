@@ -12,8 +12,7 @@ import { analyzeResume } from '../services/resumeAnalysis';
 import { apiRequest } from '../services/interviewService';
 
 export interface Room {
-  id: string; // session_id
-  interview_id: string; // interview_id from backend — mandatory
+  id: string; // unique id, same as interviewId from backend
   userId?: string;
   targetRole: string;
   targetCompany: string;
@@ -41,7 +40,6 @@ interface InterviewContextType {
       | 'hasCompletedInterview'
       | 'transcript'
       | 'metrics'
-      | 'interview_id'
     >
   ) => Promise<string>;
   getRoom: (roomId: string) => Room | undefined;
@@ -58,12 +56,12 @@ interface InterviewContextType {
 
 const InterviewContext = createContext<InterviewContextType | undefined>(undefined);
 
-// Helper function to normalize strings for comparison
+// Normalize strings helper
 const normalizeString = (str: string | undefined): string => {
   return str ? str.trim().toLowerCase().replace(/\s+/g, ' ') : '';
 };
 
-// Helper function to generate a unique key for room creation tracking
+// Generate unique key for room creation tracking
 const generateRoomKey = (roomData: Partial<Room>, userId?: string): string => {
   return JSON.stringify({
     userId,
@@ -85,7 +83,7 @@ export const InterviewProvider = ({ children }: { children: ReactNode }) => {
   const { user, isLoading: authLoading } = useAuth();
   const pendingCreates = useRef<Set<string>>(new Set());
 
-  // Fetch rooms when user changes or auth loading completes
+  // Fetch rooms on user/auth load
   useEffect(() => {
     let isMounted = true;
     const controller = new AbortController();
@@ -106,7 +104,7 @@ export const InterviewProvider = ({ children }: { children: ReactNode }) => {
           setRooms(sessions);
           setLoading(false);
         }
-      } catch (err) {
+      } catch {
         if (isMounted && !controller.signal.aborted) {
           setRooms([]);
           setError('Failed to fetch rooms. Please try again later.');
@@ -137,14 +135,12 @@ export const InterviewProvider = ({ children }: { children: ReactNode }) => {
       | 'hasCompletedInterview'
       | 'transcript'
       | 'metrics'
-      | 'interview_id'
     >
   ): Promise<string> => {
     if (!user) {
       throw new Error('User not authenticated');
     }
 
-    // Normalize all strings for comparison
     const normalizedRoomData = {
       ...roomData,
       targetRole: normalizeString(roomData.targetRole),
@@ -154,7 +150,7 @@ export const InterviewProvider = ({ children }: { children: ReactNode }) => {
       currentDesignation: normalizeString(roomData.currentDesignation),
     };
 
-    // Check for duplicates with more flexible comparison
+    // Check duplicate
     const duplicateRoom = rooms.find((room) => {
       return (
         normalizeString(room.targetRole) === normalizedRoomData.targetRole &&
@@ -198,16 +194,13 @@ export const InterviewProvider = ({ children }: { children: ReactNode }) => {
 
       const result = await analyzeResume(analysisPayload);
 
-      const sessionId = result?.session_id;
       const interviewId = result?.interview_id;
-
-      if (!sessionId || !interviewId) {
+      if (!interviewId) {
         throw new Error('Failed to create room. Please try again.');
       }
 
       const newRoom: Room = {
-        id: sessionId,
-        interview_id: interviewId,
+        id: interviewId,              // <-- here you wanted `id` instead of `interview_id`
         userId: user.id,
         ...roomData,
         createdAt: new Date().toISOString(),
@@ -224,7 +217,7 @@ export const InterviewProvider = ({ children }: { children: ReactNode }) => {
           : [...prev, newRoom];
       });
 
-      return sessionId;
+      return interviewId;
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to create room';
       setError(errorMessage);
@@ -237,19 +230,19 @@ export const InterviewProvider = ({ children }: { children: ReactNode }) => {
 
   const getRoom = useCallback(
     (roomId: string): Room | undefined =>
-      rooms.find((room) => room.id === roomId && room.interview_id !== '0'),
+      rooms.find((room) => room.id === roomId && room.status !== 'deleted'),
     [rooms]
   );
 
   const deleteRoom = async (roomId: string): Promise<void> => {
     try {
       const roomToDelete = rooms.find((room) => room.id === roomId);
-      if (!roomToDelete || !roomToDelete.interview_id) {
+      if (!roomToDelete) {
         throw new Error('Room not found');
       }
 
       await apiRequest({
-        endpoint: `/api/v1/sessions/interview/${roomToDelete.interview_id}`,
+        endpoint: `/api/v1/sessions/interview/${roomId}`,
         method: 'DELETE',
       });
 
@@ -297,20 +290,22 @@ export const InterviewProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const getCompletedRooms = useCallback(
-    () => rooms.filter((room) => 
-      room.hasCompletedInterview && 
-      room.interview_id !== '0' &&
-      room.status !== 'deleted'
-    ),
+    () =>
+      rooms.filter(
+        (room) =>
+          room.hasCompletedInterview &&
+          room.status !== 'deleted'
+      ),
     [rooms]
   );
 
   const getPendingRooms = useCallback(
-    () => rooms.filter((room) => 
-      !room.hasCompletedInterview && 
-      room.interview_id !== '0' &&
-      room.status !== 'deleted'
-    ),
+    () =>
+      rooms.filter(
+        (room) =>
+          !room.hasCompletedInterview &&
+          room.status !== 'deleted'
+      ),
     [rooms]
   );
 

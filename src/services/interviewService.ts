@@ -112,13 +112,13 @@ export const apiRequest = async <T = any>({
 /**
  * ✅ Check which sessions are completed
  */
-export const checkCompletedSessions = async (
+export const checkCompletedInterview = async (
   roomIds: string[]
 ): Promise<Set<string>> => {
   const data = await apiRequest<CompletionResponse>({
     endpoint: '/api/v1/sessions/check-completion',
     method: 'POST',
-    body: { session_ids: roomIds },
+    body: { interview_ids: roomIds },
   });
 
   const completed = data.sessions.filter(session => session.is_completed);

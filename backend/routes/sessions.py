@@ -25,70 +25,106 @@ def convert_decimal(obj):
     else:
         return obj
 
+from typing import List
+from pydantic import BaseModel
+
+class InterviewIdList(BaseModel):
+    interview_ids: List[int]
+
 @router.post("/check-completion")
-async def check_session_completion(
-    payload: SessionIdList, 
+async def check_interview_completion(
+    payload: InterviewIdList,
     current_user: Dict[str, Any] = Depends(get_current_user)
 ):
-    session_ids = payload.session_ids
-    user_id_from_token = current_user.get("user_id")  # Get user_id from token
+    interview_ids = payload.interview_ids
+    user_id_from_token = current_user.get("user_id")
+
+    if not interview_ids:
+        raise HTTPException(status_code=400, detail="No interview IDs provided.")
+
     db_conn = None
     cursor = None
-    try:
-        if not session_ids:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No session IDs provided.")
 
+    try:
         db_conn = get_db_connection()
         cursor = db_conn.cursor(dictionary=True)
 
-        # Prepare placeholders for parameterized IN query
-        format_strings = ','.join(['%s'] * len(session_ids))
-        
-        query = f"""
-            SELECT m.session_id, m.transcription_flag, m.transcription
-            FROM Meeting m
-            JOIN InterviewSession ifs ON m.session_id = ifs.session_id
-            JOIN Interview i ON ifs.interview_id = i.interview_id
-            JOIN LoginTrace lt ON i.log_id = lt.log_id
-            WHERE m.session_id IN ({format_strings}) AND lt.user_id = %s
+        # Step 1: Verify these interviews belong to the current user
+        placeholders = ','.join(['%s'] * len(interview_ids))
+        query_verify = f"""
+            SELECT interview_id FROM Interview
+            WHERE interview_id IN ({placeholders}) AND user_id = %s
         """
+        cursor.execute(query_verify, tuple(interview_ids) + (user_id_from_token,))
+        valid_interviews = [row['interview_id'] for row in cursor.fetchall()]
+        if not valid_interviews:
+            raise HTTPException(status_code=403, detail="No valid interviews found for this user.")
 
-        cursor.execute(query, tuple(session_ids + [user_id_from_token]))
-        results = cursor.fetchall()
+        # Step 2: Fetch sessions for these interviews
+        placeholders = ','.join(['%s'] * len(valid_interviews))
+        query_sessions = f"""
+            SELECT session_id, interview_id FROM InterviewSession
+            WHERE interview_id IN ({placeholders})
+        """
+        cursor.execute(query_sessions, tuple(valid_interviews))
+        sessions = cursor.fetchall()  # list of dicts with session_id and interview_id
 
-        completed_sessions = {}
-        for row in results:
-            completed_sessions[row['session_id']] = {
-                "transcription_flag": bool(row['transcription_flag']),
-                "transcription": row['transcription']
-            }
+        if not sessions:
+            # No sessions found for these interviews
+            return JSONResponse(content={"sessions": []})
+
+        session_ids = [s['session_id'] for s in sessions]
+
+        # Step 3: Fetch meeting completion status for these session_ids
+        placeholders = ','.join(['%s'] * len(session_ids))
+        query_meeting = f"""
+            SELECT session_id, transcription_flag, transcription FROM Meeting
+            WHERE session_id IN ({placeholders})
+        """
+        cursor.execute(query_meeting, tuple(session_ids))
+        meeting_data = cursor.fetchall()
+
+        meeting_map = {m['session_id']: m for m in meeting_data}
+
+        # Step 4: Prepare response per interview_id
+        # Group sessions by interview_id and mark if any session is completed
+        from collections import defaultdict
+        interview_sessions = defaultdict(list)
+        for s in sessions:
+            interview_sessions[s['interview_id']].append(s['session_id'])
 
         response_data = []
-        for session_id in session_ids:
-            session_info = completed_sessions.get(session_id, {"transcription_flag": False, "transcription": None})
+        for interview_id in valid_interviews:
+            sessions_for_interview = interview_sessions.get(interview_id, [])
+            # Check if any session has transcription_flag true
+            is_completed = any(
+                meeting_map.get(sess_id, {}).get('transcription_flag') for sess_id in sessions_for_interview
+            )
+            # Optionally, you can include transcripts or more details per session
             response_data.append({
-                "session_id": session_id,
-                "is_completed": session_info["transcription_flag"],
-                "transcription": session_info["transcription"]
+                "interview_id": interview_id,
+                "is_completed": bool(is_completed),
+                "session_ids": sessions_for_interview,
             })
 
-        return JSONResponse(content={"sessions": response_data})
+        return JSONResponse(content={"interviews": response_data})
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error checking session completion: {e}\n{traceback.format_exc()}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An internal error occurred while checking session completion.")
+        logger.error(f"Error checking interview completion: {e}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail="Internal error checking interview completion.")
     finally:
         if cursor:
             cursor.close()
         if db_conn and db_conn.is_connected():
             db_conn.close()
+
             
-@router.get("/analysis/{session_id}")
-async def get_analysis(session_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
+@router.get("/analysis/{interview_id}")
+async def get_analysis(interview_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
     """
-    Fetch analysis data for the given session ID if the current user owns the session.
+    Fetch analysis data for the given interview ID if the current user owns the interview.
     """
     conn = None
     cursor = None
@@ -101,15 +137,14 @@ async def get_analysis(session_id: str, current_user: Dict[str, Any] = Depends(g
         cursor = conn.cursor(dictionary=True)
 
         query = """
-            SELECT ifs.prompt_example_questions
-            FROM InterviewSession ifs
-            JOIN Interview i ON ifs.interview_id = i.interview_id
+            SELECT i.prompt_example_questions
+            FROM Interview i
             JOIN LoginTrace lt ON i.log_id = lt.log_id
-            WHERE ifs.session_id = %s AND lt.user_id = %s
+            WHERE i.interview_id = %s AND lt.user_id = %s
             LIMIT 1
         """
 
-        cursor.execute(query, (session_id, user_id))
+        cursor.execute(query, (interview_id, user_id))
         analysis_row = cursor.fetchone()
 
         if not analysis_row or not analysis_row.get("prompt_example_questions"):
@@ -122,13 +157,14 @@ async def get_analysis(session_id: str, current_user: Dict[str, Any] = Depends(g
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error fetching analysis for session {session_id}: {e}\n{traceback.format_exc()}")
+        logger.error(f"Error fetching analysis for interview {interview_id}: {e}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail="Failed to fetch analysis data.")
     finally:
         if cursor:
             cursor.close()
         if conn and conn.is_connected():
             conn.close()
+
 
 @router.get("/")
 async def get_sessions(current_user: Dict[str, Any] = Depends(get_current_user)):
@@ -155,7 +191,8 @@ async def get_sessions(current_user: Dict[str, Any] = Depends(get_current_user))
                 i.years_of_experience, 
                 i.current_designation, 
                 i.created_at, 
-                i.status
+                i.status,
+                i.prompt_example_questions
             FROM Interview i
             JOIN (
                 SELECT ifs.interview_id, MAX(ifs.session_id) AS session_id

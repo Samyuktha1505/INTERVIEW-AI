@@ -41,7 +41,6 @@ async def analyze_resume(
 
     db_conn = None
     cursor = None
-    session_id = str(uuid.uuid4())
 
     try:
         logger.info(f"[{datetime.datetime.now()}] /analyze_resume request received for user: {user_email}")
@@ -156,43 +155,19 @@ async def analyze_resume(
             user_id
         ))
         db_conn.commit()
-
-        # Get resume_id for user
+        
         cursor.execute("""
-            SELECT resume_id FROM Resume
-            WHERE user_id = %s
-            ORDER BY resume_id DESC
-            LIMIT 1
-        """, (user_id,))
-        resume_id_row = cursor.fetchone()
-        if not resume_id_row:
-            raise HTTPException(status_code=500, detail="Failed to retrieve resume_id.")
-        resume_id_for_session = resume_id_row[0]
-
-        # Insert InterviewSession row
-        cursor.execute("""
-            INSERT INTO InterviewSession (
-                session_id, resume_id, interview_id, prompt_example_questions, session_created_at
-            ) VALUES (%s, %s, %s, %s, %s)
+            UPDATE Interview SET
+                prompt_example_questions = %s
+            WHERE interview_id=%s
         """, (
-            session_id,
-            resume_id_for_session,
-            interview_id_for_session,
             json.dumps(questionnaire_prompt),
-            datetime.datetime.utcnow()
+            interview_id_for_session
         ))
-
-        # Insert Meeting row
-        cursor.execute("""
-            INSERT INTO Meeting (session_id, transcription_flag)
-            VALUES (%s, %s)
-        """, (session_id, False))
-
         db_conn.commit()
 
-        # Return session_id and interview_id to frontend
+        # Return interview_id to frontend
         return JSONResponse(content={
-            "session_id": session_id,
             "interview_id": interview_id_for_session,
             "Questionnaire_prompt": questionnaire_prompt
         })

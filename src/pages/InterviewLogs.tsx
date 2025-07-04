@@ -8,7 +8,7 @@ import { Link } from "react-router-dom";
 import { ChevronDown, ChevronUp, Code, MessageSquare, Cpu, Shield, FileText, Video } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { generateAndFetchMetrics, Metrics } from '../services/metricsService';
-import { checkCompletedSessions } from '../services/interviewService';
+import { checkCompletedInterview} from '../services/interviewService';
 import { Pie } from 'react-chartjs-2';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
 
@@ -29,7 +29,7 @@ const InterviewLogs = () => {
   useEffect(() => {
     if (userRooms.length > 0) {
       const roomIds = userRooms.map(room => room.id);
-      checkCompletedSessions(roomIds).then(completedIds => {
+      checkCompletedInterview(roomIds).then(completedIds => {
         setCompletedRoomIds(completedIds);
       });
     }
