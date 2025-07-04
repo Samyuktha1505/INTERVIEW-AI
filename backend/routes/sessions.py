@@ -224,6 +224,7 @@ async def get_sessions(current_user: Dict[str, Any] = Depends(get_current_user))
 
 
 
+
 @router.delete("/interview/{interview_id}")
 async def delete_interview(interview_id: int, current_user: Dict[str, Any] = Depends(get_current_user)):
     conn = None
