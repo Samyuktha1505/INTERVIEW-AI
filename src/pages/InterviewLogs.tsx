@@ -5,10 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "react-router-dom";
-import { ChevronDown, ChevronUp, Code, MessageSquare, Cpu, Shield, FileText, Video } from "lucide-react";
+import { ChevronDown, ChevronUp, ChevronLeft, Code, MessageSquare, Cpu, Shield, FileText, Video } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { generateAndFetchMetrics, Metrics } from '../services/metricsService';
-import { checkCompletedSessions} from '../services/interviewService';
+import { checkCompletedSessions } from '../services/interviewService';
 import { Pie } from 'react-chartjs-2';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
 
@@ -110,7 +110,15 @@ const InterviewLogs = () => {
   };
 
   return (
-    <div className="container mx-auto p-4">
+       <div className="container mx-auto p-4">
+       <div className="mb-4">
+           <Link to="/dashboard">
+           <Button variant="ghost" className="flex items-center space-x-2">
+              <ChevronLeft className="h-5 w-5" />
+               <span>Back to Dashboard</span>
+            </Button>
+         </Link>
+      </div>
       <h1 className="text-2xl font-bold mb-6">Your Interview Reports</h1>
       
       {completedRooms.length === 0 ? (

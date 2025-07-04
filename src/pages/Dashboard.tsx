@@ -142,38 +142,31 @@ const Dashboard = () => {
   // Sidebar content reused for desktop and mobile
   const sidebarContent = (
     <div className="h-full flex flex-col">
-      <div className="p-6 border-b">
-        <h2 className="text-xl font-bold text-primary">InterviewAI</h2>
-      </div>
-      <nav className="flex-1 p-6">
-        <div className="space-y-2">
-          <Button
-            className="w-full justify-start"
-            onClick={() => setIsSidebarOpen(false)}
-          >
+    <div className="p-6 border-b">
+      <h2 className="text-xl font-bold text-primary">InterviewAI</h2>
+    </div>
+    <nav className="flex-1 p-6">
+      <div className="flex flex-col gap-y-3">
+        <Link to="/" onClick={() => setIsSidebarOpen(false)}>
+          <Button className="w-full justify-start">
             <User className="mr-2 h-4 w-4" />
             Dashboard
           </Button>
-          <Button
-            className="w-full justify-start"
-            onClick={() => setIsSidebarOpen(false)}
-          >
+        </Link>
+        <Link to="/interview-logs" onClick={() => setIsSidebarOpen(false)}>
+          <Button className="w-full justify-start">
             <Video className="mr-2 h-4 w-4" />
-            Interviews
+            Interview Insights
           </Button>
-        </div>
-        <div className="mt-3">
-          <Link to="/profile">
-            <Button
-              className="w-full justify-start"
-              onClick={() => setIsSidebarOpen(false)}
-            >
-              <Settings className="mr-2 h-4 w-4" />
-              Edit Profile
-            </Button>
-          </Link>
-        </div>
-      </nav>
+        </Link>
+        <Link to="/profile" onClick={() => setIsSidebarOpen(false)}>
+          <Button className="w-full justify-start">
+            <Settings className="mr-2 h-4 w-4" />
+            Edit Profile
+          </Button>
+        </Link>
+      </div>
+    </nav>
       <div className="p-6 border-t">
         <div className="flex items-center space-x-3 mb-4">
           <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center">
