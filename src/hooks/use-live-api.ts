@@ -29,7 +29,7 @@ export type UseLiveAPIResults = {
   model: string;
   setModel: (model: string) => void;
   connected: boolean;
-  connect: () => Promise<void>;
+  connect: (sessionId?: string) => Promise<void>;
   disconnect: () => Promise<void>;
   volume: number;
   setSessionTimeout: (milliseconds: number) => void; // Exposed function
@@ -98,20 +98,23 @@ export function useLiveAPI(options: LiveClientOptions): UseLiveAPIResults {
     };
   }, [client]);
 
-  const connect = useCallback(async () => {
-    if (!config) {
-      throw new Error("[useLiveAPI] LiveConnectConfig has not been set.");
-    }
-    if (!client) {
+  const connect = useCallback(
+    async (sessionId?: string) => {
+      if (!config) {
+        throw new Error("[useLiveAPI] LiveConnectConfig has not been set.");
+      }
+      if (!client) {
         console.error("[useLiveAPI] GenAI Live Client not initialized.");
         return;
-    }
-    if (client.status !== "disconnected") {
+      }
+      if (client.status !== "disconnected") {
         client.disconnect();
-    }
-    
-    await client.connect(model, config);
-  }, [client, config, model]);
+      }
+
+      await client.connect(model, config, sessionId ?? "");
+    },
+    [client, config, model]
+  );
 
   // MODIFIED: The disconnect function now also stops the audio streamer.
   const disconnect = useCallback(async () => {

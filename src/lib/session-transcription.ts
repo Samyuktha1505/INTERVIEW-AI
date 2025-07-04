@@ -4,6 +4,12 @@ import { summarizeAndSaveTranscript } from '../services/interviewService';
 export class SessionTranscription {
   private static currentSessionId: string | null = null;
   private static transcriptionBuffer: string[] = [];
+  // Chunk buffering state
+  private static currentUserChunk: string = "";
+  private static currentAssistantChunk: string = "";
+  private static lastUserTime = 0;
+  private static lastAssistantTime = 0;
+  private static readonly CHUNK_TIMEOUT = 2000; // ms
 
   /**
    * Initializes a new transcription session with the correct, externally provided session ID.
@@ -25,9 +31,16 @@ export class SessionTranscription {
    */
   static handleInputTranscription(text: string) {
     if (!this.currentSessionId) return;
-    if (text.trim()) {
-      this.addTranscription('user', text);
+    if (!text.trim()) return;
+
+    const now = Date.now();
+    if (now - this.lastUserTime > this.CHUNK_TIMEOUT && this.currentUserChunk) {
+      // flush previous chunk
+      this.addTranscription('user', this.currentUserChunk.trim());
+      this.currentUserChunk = '';
     }
+    this.currentUserChunk += (this.currentUserChunk ? ' ' : '') + text.trim();
+    this.lastUserTime = now;
   }
 
   /**
@@ -35,9 +48,15 @@ export class SessionTranscription {
    */
   static handleOutputTranscription(text: string) {
     if (!this.currentSessionId) return;
-    if (text.trim()) {
-      this.addTranscription('assistant', text);
+    if (!text.trim()) return;
+
+    const now = Date.now();
+    if (now - this.lastAssistantTime > this.CHUNK_TIMEOUT && this.currentAssistantChunk) {
+      this.addTranscription('assistant', this.currentAssistantChunk.trim());
+      this.currentAssistantChunk = '';
     }
+    this.currentAssistantChunk += (this.currentAssistantChunk ? ' ' : '') + text.trim();
+    this.lastAssistantTime = now;
   }
 
   /**
@@ -61,6 +80,14 @@ export class SessionTranscription {
       return;
     }
 
+    // flush remaining chunks
+    if (this.currentUserChunk) {
+      this.addTranscription('user', this.currentUserChunk.trim());
+    }
+    if (this.currentAssistantChunk) {
+      this.addTranscription('assistant', this.currentAssistantChunk.trim());
+    }
+
     const footer = `\n=== Session Ended: ${new Date().toLocaleString()} ===\n`;
     this.transcriptionBuffer.push(footer);
 
@@ -70,6 +97,10 @@ export class SessionTranscription {
     // Reset state immediately.
     this.currentSessionId = null;
     this.transcriptionBuffer = [];
+    this.currentUserChunk = '';
+    this.currentAssistantChunk = '';
+    this.lastUserTime = 0;
+    this.lastAssistantTime = 0;
 
     // Await the save operation.
     if (sessionId) {
@@ -88,10 +119,36 @@ export class SessionTranscription {
     return content.parts
       .map(part => {
         if (typeof part === 'string') return part;
+
+        // Standard Gemini TEXT output
         if (part.text) return part.text;
+
+        // Some SDK versions wrap text inside textRun
+        // { textRun: { text: "Hello" } }
+        // or { textRun: { content: "Hello" } }
+        const p: any = part as any;
+        if (p.textRun) {
+          if (typeof p.textRun === 'string') return p.textRun;
+          if (p.textRun.text) return p.textRun.text;
+          if (p.textRun.content) return p.textRun.content;
+        }
+
+        // Occasionally text may arrive as { paragraph: { text: "..." } }
+        // or { paragraph: { elements: [ { textRun: { content: "..." } } ] } }
+        if (p.paragraph) {
+          if (p.paragraph.text) return p.paragraph.text;
+          if (Array.isArray(p.paragraph.elements)) {
+            const inner = p.paragraph.elements
+              .map((el: any) => el?.textRun?.content || el?.textRun?.text || '')
+              .filter(Boolean)
+              .join(' ');
+            if (inner) return inner;
+          }
+        }
+
         if (part.inlineData) {
           if (part.inlineData.mimeType?.startsWith('audio/')) {
-            // For audio content, we'll wait for the transcription events
+            // For audio content, transcription handled elsewhere
             return '';
           }
           if (part.inlineData.mimeType?.startsWith('image/')) return '[Image Content]';
@@ -99,7 +156,7 @@ export class SessionTranscription {
         }
         return '';
       })
-      .filter(text => text)
+      .filter(Boolean)
       .join(' ');
   }
 

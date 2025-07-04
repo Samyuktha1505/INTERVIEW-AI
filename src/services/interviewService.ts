@@ -38,6 +38,10 @@ interface ApiRequestOptions {
   retryDelay?: number;
 }
 
+interface StartSessionResponse {
+  session_id: string;
+}
+
 // -----------------------------
 // Utility Functions
 // -----------------------------
@@ -114,13 +118,16 @@ export const apiRequest = async <T = any>({
 /**
  * ✅ Check which sessions are completed
  */
-export const checkCompletedSessions = async (
+export const checkCompletedInterview = async (
   roomIds: string[]
 ): Promise<Set<string>> => {
-  const response = await apiClient.post<CompletionResponse>('/api/v1/sessions/check-completion', {
-    session_ids: roomIds,
+  const numericIds = roomIds.map(id => Number(id));
+  const data = await apiRequest<CompletionResponse>({
+    endpoint: '/api/v1/sessions/check-completion',
+    method: 'POST',
+    body: { interview_ids: numericIds },
   });
-  const completed = response.data.sessions.filter(session => session.is_completed);
+  const completed = data.sessions.filter(session => session.is_completed);
   return new Set(completed.map(session => session.session_id));
 };
 
@@ -157,4 +164,15 @@ export const summarizeAndSaveTranscript = async (sessionId: string, transcript: 
     }
     throw error;
   }
+};
+
+export const createInterviewSession = async (
+  interviewId: string | number
+): Promise<string> => {
+  const data = await apiRequest<StartSessionResponse>({
+    endpoint: '/api/v1/sessions/start',
+    method: 'POST',
+    body: { interview_id: interviewId },
+  });
+  return data.session_id;
 };

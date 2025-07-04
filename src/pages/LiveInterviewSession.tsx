@@ -22,6 +22,7 @@ import { SessionTranscription } from "../lib/session-transcription";
 import { useWebcam } from "../hooks/use-webcam";
 import { useScreenCapture } from "../hooks/use-screen-capture";
 import { AudioRecorder } from "../lib/audio-recorder";
+import { createInterviewSession } from "../services/interviewService";
 
 async function fetchAnalysis(sessionId: string) {
   const API_BASE_URL = 'http://localhost:8000/api';
@@ -53,6 +54,7 @@ const LiveInterviewSessionContent = () => {
   const webcam = useWebcam();
   const screenCapture = useScreenCapture();
   const [audioRecorder] = useState(() => new AudioRecorder());
+  const [sessionId, setSessionId] = useState<string | null>(null);
 
   useEffect(() => {
     sessionEndedRef.current = false;
@@ -115,11 +117,19 @@ const LiveInterviewSessionContent = () => {
   }, [roomId]);
 
   const handleStartInterview = async () => {
+    let sid = sessionId;
     if (!interviewStarted && roomId) {
-      SessionTranscription.initializeSession(roomId);
-      setInterviewStarted(true);
+      try {
+        sid = await createInterviewSession(roomId);
+        setSessionId(sid);
+        SessionTranscription.initializeSession(sid);
+        setInterviewStarted(true);
+      } catch (err: any) {
+        setError(err.message || "Failed to start interview session.");
+        return;
+      }
     }
-    await connect();
+    await connect(sid);
   };
 
   const handleEndAndSave = async () => {

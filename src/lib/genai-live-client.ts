@@ -230,8 +230,9 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
   }
 
   public disconnect() {
-    // End transcription session when disconnecting
-    SessionTranscription.endSession();
+    // Do NOT automatically end and flush transcription here.
+    // The owning component (e.g., LiveInterviewSession) is responsible for calling endSession
+    // exactly once so we don't accidentally clear the buffer before it is uploaded.
 
     console.log("[GenAILiveClient] Disconnect: User initiated.");
     if (this.autoReconnectTimerId) {
@@ -380,8 +381,8 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
     // Handle outputTranscription event (assistant's speech from ASR/LLM)
     if (message.serverContent?.outputTranscription?.text) {
       const transcribedText = message.serverContent.outputTranscription.text;
-      SessionTranscription.handleOutputTranscription(transcribedText); // CORRECT: Use the new handler
-      useChatStore.getState().addMessage("agent", transcribedText);
+      SessionTranscription.handleOutputTranscription(transcribedText);
+      useChatStore.getState().addMessage("assistant", transcribedText);
       return;
     }
 
@@ -430,7 +431,7 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
         // Ensure AI's text responses are captured for transcription.
         const textContent = SessionTranscription.parseContentToText(modelTurn);
         if (textContent) {
-          SessionTranscription.addTranscription('agent', textContent);
+          SessionTranscription.addTranscription('assistant', textContent);
         }
 
         let currentProcessingParts: Part[] = modelTurn.parts || [];
