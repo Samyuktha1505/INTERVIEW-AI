@@ -627,3 +627,43 @@ async def get_user_profile(current_user: dict = Depends(get_current_user)):
     finally:
         cursor.close()
         conn.close()
+
+@router.post('/dashboard-reset-password')
+async def dashboard_reset_password(
+    email: str = Form(...),
+    old_password: str = Form(...),
+    new_password: str = Form(...)
+):
+    db_conn = None
+    cursor = None
+    try:
+        db_conn = get_db_connection()
+        cursor = db_conn.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT h.hash_password
+            FROM HASH h
+            WHERE h.email = %s
+        """, (email,))
+        user = cursor.fetchone()
+        if not user or user["hash_password"] is None:
+            raise HTTPException(status_code=404, detail="User not found or password not set.")
+        hashed_pw = user["hash_password"]
+        if isinstance(hashed_pw, (bytes, bytearray)):
+            hashed_pw = hashed_pw.decode()
+        hashed_pw = hashed_pw.strip()
+        if not verify_password(old_password, hashed_pw):
+            raise HTTPException(status_code=401, detail="Old password is incorrect.")
+        new_hashed_pw = hash_password(new_password)
+        cursor.execute('UPDATE HASH SET hash_password = %s WHERE email = %s', (new_hashed_pw, email))
+        db_conn.commit()
+        return JSONResponse(content={"success": True, "message": "Password updated successfully"})
+    except HTTPException as e:
+        if db_conn: db_conn.rollback()
+        raise e
+    except Exception as e:
+        logging.error(f"Error resetting password for {email}: {e}", exc_info=True)
+        if db_conn: db_conn.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error.")
+    finally:
+        if cursor: cursor.close()
+        if db_conn and db_conn.is_connected(): db_conn.close()

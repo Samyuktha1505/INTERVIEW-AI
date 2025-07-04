@@ -466,7 +466,7 @@ const Dashboard = () => {
                     formData.append("new_password", newPassword);
 
                     const res = await fetch(
-                      "http://localhost:8000/api/v1/auth/reset-password",
+                      "http://localhost:8000/api/v1/auth/dashboard-reset-password",
                       {
                         method: "POST",
                         body: formData,
