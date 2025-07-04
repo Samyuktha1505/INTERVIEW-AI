@@ -98,7 +98,7 @@ def create_user(email: str, mobile: str = "", countryCode: str = "") -> int:
         INSERT INTO User (email, phone, country_code, created_at, updated_at)
         VALUES (%s, %s, %s, %s, %s)
         """,
-        (email, mobile, countryCode, datetime.datetime.utcnow(), datetime.datetime.utcnow())
+        (email, mobile, countryCode, datetime.utcnow(), datetime.utcnow())
     )
     conn.commit()
     user_id = cursor.lastrowid
