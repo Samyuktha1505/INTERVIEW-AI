@@ -22,6 +22,8 @@ import {
   Menu,
   FileText,
   Loader2,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import CreateRoomModal from "../components/CreateRoomModal";
@@ -50,6 +52,9 @@ const Dashboard = () => {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [resetLoading, setResetLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [showOldPassword, setShowOldPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   // Filter rooms owned by current user and with status 'scheduled'
   const deletedRooms = JSON.parse(localStorage.getItem('deletedRooms') || '[]');
@@ -404,40 +409,70 @@ const Dashboard = () => {
             )}
 
             <label className="block text-sm font-medium">Old Password</label>
-            <input
-              type="password"
-              className="w-full border rounded px-3 py-2 mb-2"
-              value={oldPassword}
-              onChange={(e) => {
-                setOldPassword(e.target.value);
-                setErrorMessage("");
-              }}
-              autoComplete="current-password"
-            />
+            <div className="relative">
+              <input
+                type={showOldPassword ? "text" : "password"}
+                className="w-full border rounded px-3 py-2 mb-2 pr-10"
+                value={oldPassword}
+                onChange={(e) => {
+                  setOldPassword(e.target.value);
+                  setErrorMessage("");
+                }}
+                autoComplete="current-password"
+              />
+              <button
+                type="button"
+                className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400"
+                onClick={() => setShowOldPassword((prev) => !prev)}
+                tabIndex={-1}
+              >
+                {showOldPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+              </button>
+            </div>
 
             <label className="block text-sm font-medium">New Password</label>
-            <input
-              type="password"
-              className="w-full border rounded px-3 py-2 mb-2"
-              value={newPassword}
-              onChange={(e) => {
-                setNewPassword(e.target.value);
-                setErrorMessage("");
-              }}
-              autoComplete="new-password"
-            />
+            <div className="relative">
+              <input
+                type={showNewPassword ? "text" : "password"}
+                className="w-full border rounded px-3 py-2 mb-2 pr-10"
+                value={newPassword}
+                onChange={(e) => {
+                  setNewPassword(e.target.value);
+                  setErrorMessage("");
+                }}
+                autoComplete="new-password"
+              />
+              <button
+                type="button"
+                className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400"
+                onClick={() => setShowNewPassword((prev) => !prev)}
+                tabIndex={-1}
+              >
+                {showNewPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+              </button>
+            </div>
 
             <label className="block text-sm font-medium">Confirm New Password</label>
-            <input
-              type="password"
-              className="w-full border rounded px-3 py-2 mb-4"
-              value={confirmPassword}
-              onChange={(e) => {
-                setConfirmPassword(e.target.value);
-                setErrorMessage("");
-              }}
-              autoComplete="new-password"
-            />
+            <div className="relative">
+              <input
+                type={showConfirmPassword ? "text" : "password"}
+                className="w-full border rounded px-3 py-2 mb-4 pr-10"
+                value={confirmPassword}
+                onChange={(e) => {
+                  setConfirmPassword(e.target.value);
+                  setErrorMessage("");
+                }}
+                autoComplete="new-password"
+              />
+              <button
+                type="button"
+                className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400"
+                onClick={() => setShowConfirmPassword((prev) => !prev)}
+                tabIndex={-1}
+              >
+                {showConfirmPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+              </button>
+            </div>
 
             <div className="flex gap-2">
               <Button

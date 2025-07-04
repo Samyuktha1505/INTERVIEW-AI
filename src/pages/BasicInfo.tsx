@@ -46,7 +46,21 @@ const BasicInfo = () => {
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    if (user?.isProfileComplete) {
+    if (!user) {
+      navigate('/login');
+    } else if (user.isProfileComplete) {
+      // Check if required fields are empty (user refreshed without entering details)
+      const requiredFields = [user.firstName, user.lastName, user.gender, user.dateOfBirth, user.collegeName, user.yearsOfExperience, user.mobile, user.countryCode];
+      const missingFields = requiredFields.some(field => !field || field === '' || field === null || field === undefined);
+      if (missingFields) {
+        toast({
+          title: "Profile Incomplete",
+          description: "Just one step away! Complete your basic info details to unlock your personalized Interview experience!.",
+          variant: "success",
+        });
+        // Stay on basic info page
+        return;
+      }
       navigate('/dashboard');
     }
   }, [user, navigate]);
