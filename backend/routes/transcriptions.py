@@ -10,7 +10,7 @@ class TranscriptPayload(BaseModel):
     interview_id: int
     transcription_text: str
 
-@router.post("/transcripts", status_code=status.HTTP_201_CREATED)
+@router.post("/transcript", status_code=status.HTTP_201_CREATED)
 def save_transcript(data: TranscriptPayload):
     conn = get_db_connection()
     cursor = conn.cursor()

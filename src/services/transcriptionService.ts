@@ -7,7 +7,7 @@ interface SaveResponse {
 
 export const saveTranscription = async (sessionId: string, transcriptionText: string): Promise<SaveResponse> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/v1/transcripts/`, {
+    const response = await fetch(`${API_BASE_URL}/v1/transcriptions/transcript`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
