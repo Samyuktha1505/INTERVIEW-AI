@@ -161,30 +161,22 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
     this.emit("log", logEntry);
   }
 
-  // --- MODIFIED: Added sessionId parameter ---
   async connect(model: string, config: LiveConnectConfig, sessionId: string): Promise<boolean> {
-    // Initialize transcription session when connecting
-    // --- MODIFIED: Pass sessionId here ---
-    SessionTranscription.initializeSession(sessionId);
+    this.log("client.connect", model);
 
-    if (!this.isAutoReconnecting) {
-      if (this.autoReconnectTimerId) {
-        clearTimeout(this.autoReconnectTimerId);
-        this.autoReconnectTimerId = null;
-      }
-      this.autoReconnectAttempts = 0;
-      console.log("[GenAILiveClient] Connect: Manual connection initiated, resetting auto-reconnect attempts.");
-    }
-
-    if (this._status === "connected" || (this._status === "connecting" && !this.isAutoReconnecting)) {
+    if (this._status !== "disconnected") {
       console.warn(`[GenAILiveClient] Connect: Attempt while status is already '${this._status}'. Aborting manual connect.`);
       return false;
     }
 
-    console.log(`[GenAILiveClient] Connect: Initiating connection. Model: ${model}. Current status: ${this._status}. Is auto-reconnecting cycle active: ${this.isAutoReconnecting}`);
-    this._status = "connecting";
-    this.config = { ...config };
     this._model = model;
+    this.config = config;
+
+    // The client should not be responsible for initializing the transcription session.
+    // This should be handled at a higher level in the application logic.
+    // SessionTranscription.initializeSession(sessionId);
+
+    this._status = "connecting";
 
     const previousSessionHandle = await this.loadPreviousSessionHandle(); // This can be string | null
 
@@ -438,7 +430,7 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
         // Ensure AI's text responses are captured for transcription.
         const textContent = SessionTranscription.parseContentToText(modelTurn);
         if (textContent) {
-          SessionTranscription.addFinalizedText('agent', textContent);
+          SessionTranscription.addTranscription('agent', textContent);
         }
 
         let currentProcessingParts: Part[] = modelTurn.parts || [];
@@ -518,7 +510,6 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
     const clientContentToLog = { turns: Array.isArray(parts) ? parts : [parts], turnComplete };
     this.log(`client.send`, clientContentToLog);
 
-    // --- RESTORED ---
     // Capture user-typed text and add it directly to the transcription.
     const userContent: Content = {
       role: 'user',
@@ -526,7 +517,7 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
     };
     const userText = SessionTranscription.parseContentToText(userContent);
     if (userText) {
-      SessionTranscription.addFinalizedText('user', userText);
+      SessionTranscription.addTranscription('user', userText);
     }
   }
 }

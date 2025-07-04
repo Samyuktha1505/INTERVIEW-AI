@@ -1,117 +1,55 @@
-import { Content, Part } from "@google/genai";
+import { Content } from "@google/genai";
 import { summarizeAndSaveTranscript } from '../services/interviewService';
 
 export class SessionTranscription {
   private static currentSessionId: string | null = null;
-  private static transcriptionBuffer: string[] = []; // Stores the full, formatted transcription as an array of lines/chunks
-  private static currentUserChunk: string = ''; // Accumulates user's current speech chunk
-  private static currentAssistantChunk: string = ''; // Accumulates assistant's current speech chunk
-  private static lastUserTranscriptionTime: number = 0;
-  private static lastAssistantTranscriptionTime: number = 0;
-  private static readonly CHUNK_DEBOUNCE_TIME_MS = 1000; // Time in milliseconds before a chunk is considered "complete"
+  private static transcriptionBuffer: string[] = [];
 
   /**
-   * Helper to check if text content is meaningful.
-   */
-  private static hasContent(text: string): boolean {
-    return text.trim().length > 0;
-  }
-
-  /**
-   * Initializes a new transcription session. Call this at the start of a new meeting.
-   * @param sessionId The unique ID for the current session.
+   * Initializes a new transcription session with the correct, externally provided session ID.
    */
   static initializeSession(sessionId: string) {
     if (!sessionId) {
       console.error("Cannot initialize session transcription without a valid session ID.");
       return;
     }
-    console.log(`Initializing transcription session for ID: ${sessionId}`);
     this.currentSessionId = sessionId;
     this.transcriptionBuffer = [];
-    this.currentUserChunk = '';
-    this.currentAssistantChunk = '';
-    this.lastUserTranscriptionTime = 0;
-    this.lastAssistantTranscriptionTime = 0;
-
-    // Add initial header to the buffer
-    const timestamp = new Date().toLocaleString();
-    this.transcriptionBuffer.push(`=== Session Transcription ===\nSession ID: ${this.currentSessionId}\nStarted: ${timestamp}\n\n`);
+    
+    const header = `=== Session Transcription ===\nSession ID: ${this.currentSessionId}\nStarted: ${new Date().toLocaleString()}\n\n`;
+    this.transcriptionBuffer.push(header);
   }
 
   /**
-   * Appends the currently accumulated user and assistant chunks to the main transcription buffer.
-   * This is called before saving or at the end of the session to ensure all text is consolidated.
-   */
-  private static async flushCurrentChunksToBuffer() {
-    if (this.hasContent(this.currentUserChunk)) {
-      const timestamp = new Date().toLocaleString();
-      const entry = `[${timestamp}] USER:\n${this.currentUserChunk.trim()}\n\n`;
-      this.transcriptionBuffer.push(entry);
-      this.currentUserChunk = ''; // Clear the chunk after flushing
-    }
-    if (this.hasContent(this.currentAssistantChunk)) {
-      const timestamp = new Date().toLocaleString();
-      const entry = `[${timestamp}] ASSISTANT:\n${this.currentAssistantChunk.trim()}\n\n`;
-      this.transcriptionBuffer.push(entry);
-      this.currentAssistantChunk = ''; // Clear the chunk after flushing
-    }
-  }
-
-  /**
-   * Handles incoming transcription from the user (e.g., from ASR).
-   * Chunks are accumulated and pushed to the main buffer after a debounce time.
+   * Handles continuously transcribed text from the user's microphone.
    */
   static handleInputTranscription(text: string) {
-    if (!this.currentSessionId || !this.hasContent(text)) return;
-
-    const currentTime = Date.now();
-    if (currentTime - this.lastUserTranscriptionTime > this.CHUNK_DEBOUNCE_TIME_MS) {
-      if (this.hasContent(this.currentUserChunk)) {
-        const timestamp = new Date(this.lastUserTranscriptionTime).toLocaleString();
-        const entry = `[${timestamp}] USER:\n${this.currentUserChunk.trim()}\n\n`;
-        this.transcriptionBuffer.push(entry);
-      }
-      this.currentUserChunk = text;
-    } else {
-      this.currentUserChunk += ' ' + text;
+    if (!this.currentSessionId) return;
+    if (text.trim()) {
+      this.addTranscription('user', text);
     }
-    this.lastUserTranscriptionTime = currentTime;
   }
 
   /**
-   * Handles incoming transcription from the assistant (e.g., from LLM response).
-   * Chunks are accumulated and pushed to the main buffer after a debounce time.
+   * Handles continuously transcribed text from the assistant's speech.
    */
   static handleOutputTranscription(text: string) {
-    if (!this.currentSessionId || !this.hasContent(text)) return;
-
-    const currentTime = Date.now();
-    if (currentTime - this.lastAssistantTranscriptionTime > this.CHUNK_DEBOUNCE_TIME_MS) {
-      if (this.hasContent(this.currentAssistantChunk)) {
-        const timestamp = new Date(this.lastAssistantTranscriptionTime).toLocaleString();
-        const entry = `[${timestamp}] ASSISTANT:\n${this.currentAssistantChunk.trim()}\n\n`;
-        this.transcriptionBuffer.push(entry);
-      }
-      this.currentAssistantChunk = text;
-    } else {
-      this.currentAssistantChunk += ' ' + text;
+    if (!this.currentSessionId) return;
+    if (text.trim()) {
+      this.addTranscription('assistant', text);
     }
-    this.lastAssistantTranscriptionTime = currentTime;
   }
 
   /**
    * Directly adds a finalized text entry to the buffer, for non-ASR sources like typed input.
-   * @param author 'user' or 'agent'
-   * @param text The text content to add.
    */
-  static addFinalizedText(author: 'user' | 'agent', text: string) {
-    if (!this.currentSessionId || !this.hasContent(text)) return;
-
-    const timestamp = new Date().toLocaleString();
-    const entry = `[${timestamp}] ${author.toUpperCase()}:\n${text.trim()}\n\n`;
+  static addTranscription(role: 'user' | 'assistant', content: string) {
+    if (!this.currentSessionId) {
+      console.warn("addTranscription called before session was initialized. Ignoring.");
+      return;
+    }
+    const entry = `[${new Date().toLocaleString()}] ${role.toUpperCase()}:\n${content.trim()}\n\n`;
     this.transcriptionBuffer.push(entry);
-    console.log(`[SessionTranscription] Added finalized text from ${author}: "${text}"`);
   }
 
   /**
@@ -119,65 +57,43 @@ export class SessionTranscription {
    */
   static async endSession() {
     if (!this.currentSessionId) {
-        console.log("No active session to end.");
-        return;
+      console.log("No active session to end.");
+      return;
     }
 
-    const sessionId = this.currentSessionId;
-
-    // DIAGNOSTIC LOGGING: Check the state of the chunks *before* flushing.
-    console.log(`[SessionTranscription] endSession called. State before flush:`);
-    console.log(`  - currentUserChunk: "${this.currentUserChunk}"`);
-    console.log(`  - currentAssistantChunk: "${this.currentAssistantChunk}"`);
-
-    // Flush any final, un-debounced speech chunks.
-    await this.flushCurrentChunksToBuffer(); 
-    
-    // DIAGNOSTIC LOGGING: Check the buffer *after* flushing.
-    console.log(`[SessionTranscription] State after flush. Buffer length: ${this.transcriptionBuffer.length}`);
-    
     const footer = `\n=== Session Ended: ${new Date().toLocaleString()} ===\n`;
     this.transcriptionBuffer.push(footer);
 
-    // Get the full transcript BEFORE clearing the buffer.
-    const fullTranscript = this.getCurrentTranscription();
-    
-    // Send the final, complete transcript to the backend.
-    try {
-      console.log(`Saving final transcript for session ${sessionId}...`);
-      await summarizeAndSaveTranscript(sessionId, fullTranscript);
-      console.log(`Final transcript for session ${sessionId} saved successfully.`);
-    } catch (error) {
-      console.error(`Failed to save final transcript for session ${sessionId}:`, error);
-    }
+    const fullTranscript = this.transcriptionBuffer.join('');
+    const sessionId = this.currentSessionId;
 
-    console.log(`Session ${sessionId} ended and transcription finalized.`);
-
-    // Reset all session state for the next run.
+    // Reset state immediately.
     this.currentSessionId = null;
     this.transcriptionBuffer = [];
-    this.currentUserChunk = '';
-    this.currentAssistantChunk = '';
-    this.lastUserTranscriptionTime = 0;
-    this.lastAssistantTranscriptionTime = 0;
+
+    // Await the save operation.
+    if (sessionId) {
+      try {
+        await summarizeAndSaveTranscript(sessionId, fullTranscript);
+        console.log(`Final transcript for session ${sessionId} saved successfully.`);
+      } catch (error) {
+        console.error(`Failed to save final transcript for session ${sessionId}:`, error);
+      }
+    }
   }
 
-  /**
-   * Returns the current full transcription assembled from the buffer.
-   */
-  static getCurrentTranscription(): string {
-    return this.transcriptionBuffer.join('');
-  }
-
-  // You can keep parseContentToText if it's used elsewhere, but it's not directly used here for saving
   static parseContentToText(content: Content): string {
     if (!content.parts || content.parts.length === 0) return '';
+    
     return content.parts
       .map(part => {
         if (typeof part === 'string') return part;
         if (part.text) return part.text;
         if (part.inlineData) {
-          if (part.inlineData.mimeType?.startsWith('audio/')) return '';
+          if (part.inlineData.mimeType?.startsWith('audio/')) {
+            // For audio content, we'll wait for the transcription events
+            return '';
+          }
           if (part.inlineData.mimeType?.startsWith('image/')) return '[Image Content]';
           return '[Binary Content]';
         }
@@ -186,4 +102,9 @@ export class SessionTranscription {
       .filter(text => text)
       .join(' ');
   }
-}
+
+  // Method to get the current transcription content
+  static getCurrentTranscription(): string {
+    return this.transcriptionBuffer.join('');
+  }
+} 
