@@ -22,37 +22,71 @@ const InterviewLogs = () => {
   const [expandedReports, setExpandedReports] = useState<Set<string>>(new Set());
   const [metricsData, setMetricsData] = useState<Record<string, Metrics>>({});
   const [loadingMetrics, setLoadingMetrics] = useState<Set<string>>(new Set());
+  const userRooms = rooms.filter((room, index) => {
+  const roomUserIdStr = String(room.userId);
+  const userIdStr = String(user?.id);
 
-  const userRooms = rooms.filter(room => room.userId === user?.id);
+  // console.log(`🏷️ [${index}] room.session_id: ${room.session_id}`);
+  // console.log(`   room.userId (as string): ${roomUserIdStr}`);
+  // console.log(`   user?.id (as string): ${userIdStr}`);
+  // console.log(`   Match (as string): ${roomUserIdStr === userIdStr}`);
+
+  return roomUserIdStr === userIdStr;
+});
+
+
+// console.log("🎯 Final filtered userRooms:", userRooms);
+
   const completedRooms = userRooms.filter(room => completedRoomIds.has(room.session_id));
+
+//     console.log("All rooms:", rooms);
+// console.log("Current user ID:", user?.id);  
 
   useEffect(() => {
     if (userRooms.length > 0) {
-      const sessionIds = userRooms.map(room => room.session_id);
-      checkCompletedSessions(sessionIds).then(completedIds => {
-        setCompletedRoomIds(completedIds);
-      });
+      // Extract only valid, non-null string session_ids
+      const sessionIds = userRooms
+        .map((room) => room.session_id)
+        .filter((id): id is string => typeof id === "string" && !!id);
+  
+      // If no valid IDs, don't call API
+      if (sessionIds.length === 0) {
+        setCompletedRoomIds(new Set());
+        return;
+      }
+  
+      checkCompletedSessions(sessionIds)
+        .then((completedIds) => {
+          setCompletedRoomIds(completedIds);
+        })
+        .catch((error) => {
+          console.error("Error in checkCompletedSessions:", error);
+        });
+    } else {
+      setCompletedRoomIds(new Set()); // clear completed ids if no rooms
     }
   }, [rooms, user?.id]);
+  
 
-  const toggleReport = (roomId: string) => {
+
+  const toggleReport = (sessionid: string) => {
     const newSet = new Set(expandedReports);
-    if (newSet.has(roomId)) {
-      newSet.delete(roomId);
+    if (newSet.has(sessionid)) {
+      newSet.delete(sessionid);
     } else {
-      newSet.add(roomId);
-      if (!metricsData[roomId]) {
-        loadMetrics(roomId);
+      newSet.add(sessionid);
+      if (!metricsData[sessionid]) {
+        loadMetrics(sessionid);
       }
     }
     setExpandedReports(newSet);
   };
 
-  const loadMetrics = async (roomId: string) => {
-    setLoadingMetrics(prev => new Set(prev).add(roomId));
+  const loadMetrics = async (sessionid: string) => {
+    setLoadingMetrics(prev => new Set(prev).add(sessionid));
     try {
-      const metrics = await generateAndFetchMetrics(roomId);
-      setMetricsData(prev => ({ ...prev, [roomId]: metrics }));
+      const metrics = await generateAndFetchMetrics(sessionid);
+      setMetricsData(prev => ({ ...prev, [sessionid]: metrics }));
     } catch (error: any) {
       toast({
         title: "Error Loading Report",
@@ -62,7 +96,7 @@ const InterviewLogs = () => {
     } finally {
       setLoadingMetrics(prev => {
         const newSet = new Set(prev);
-        newSet.delete(roomId);
+        newSet.delete(sessionid);
         return newSet;
       });
     }
