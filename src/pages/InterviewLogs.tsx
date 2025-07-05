@@ -24,12 +24,12 @@ const InterviewLogs = () => {
   const [loadingMetrics, setLoadingMetrics] = useState<Set<string>>(new Set());
 
   const userRooms = rooms.filter(room => room.userId === user?.id);
-  const completedRooms = userRooms.filter(room => completedRoomIds.has(room.id));
+  const completedRooms = userRooms.filter(room => completedRoomIds.has(room.session_id));
 
   useEffect(() => {
     if (userRooms.length > 0) {
-      const roomIds = userRooms.map(room => room.id);
-      checkCompletedSessions(roomIds).then(completedIds => {
+      const sessionIds = userRooms.map(room => room.session_id);
+      checkCompletedSessions(sessionIds).then(completedIds => {
         setCompletedRoomIds(completedIds);
       });
     }
@@ -140,16 +140,16 @@ const InterviewLogs = () => {
       ) : (
         <div className="space-y-4">
           {completedRooms.map((room) => {
-            const metrics = metricsData[room.id];
-            const isExpanded = expandedReports.has(room.id);
-            const isLoading = loadingMetrics.has(room.id);
+            const metrics = metricsData[room.session_id];
+            const isExpanded = expandedReports.has(room.session_id);
+            const isLoading = loadingMetrics.has(room.session_id);
             const performanceBadge = metrics ? getPerformanceBadge(metrics.overall_rating) : null;
 
             return (
-              <Card key={room.id} className="overflow-hidden">
+              <Card key={room.session_id} className="overflow-hidden">
                 <div 
                   className="flex items-center justify-between p-6 cursor-pointer hover:bg-accent/50 transition-colors"
-                  onClick={() => toggleReport(room.id)}
+                  onClick={() => toggleReport(room.session_id)}
                 >
                   <div>
                     <h3 className="font-medium text-lg">{room.targetRole}</h3>
