@@ -63,11 +63,12 @@ const Login = () => {
     }
   };
 
-  const handleGoogleLogin = async (credentialResponse: any) => {
+  const handleGoogleLogin = async (credentialResponse) => {
     try {
       const token = credentialResponse?.credential;
       if (!token) throw new Error("No token received");
 
+      // Send Google token to backend
       const res = await fetch("http://localhost:8000/api/v1/auth/google-auth-login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -75,15 +76,45 @@ const Login = () => {
         body: JSON.stringify({ token }),
       });
 
-      if (!res.ok) throw new Error("Google login failed");
+      if (!res.ok) {
+        const data = await res.json();
+        if (
+          data.detail === "Signup first to join with us" ||
+          data.detail === "Signup to join with us"
+        ) {
+          toast({
+            title: "Signup Required",
+            description: "Signup to join with us",
+            variant: "destructive",
+          });
+          return;
+        }
+        throw new Error(data.detail || "Google login failed");
+      }
 
-      toast({ title: "Login successful", description: "Welcome back!" });
-      navigate("/dashboard");
+      // Now fetch /me to get user info (also with credentials: 'include')
+      const meRes = await fetch("http://localhost:8000/api/v1/auth/me", {
+        credentials: "include",
+      });
+      if (!meRes.ok) {
+        toast({
+          title: "Signup Required",
+          description: "Signup to join with us",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const user = await meRes.json();
+      // Set user in context/state if needed
+
+      // Redirect to dashboard
+      window.location.href = "/dashboard";
     } catch (err) {
       console.error("❌ Google login error:", err);
       toast({
-        title: "Error",
-        description: "Failed to login with Google",
+        title: "Google Login Error",
+        description: err.message,
         variant: "destructive",
       });
     }
@@ -102,14 +133,7 @@ const Login = () => {
           <div className="flex justify-center mb-4">
             <GoogleLogin
               onSuccess={handleGoogleLogin}
-              onError={() => {
-                console.error("❌ Google Login Failed");
-                toast({
-                  title: "Error",
-                  description: "Google login failed.",
-                  variant: "destructive",
-                });
-              }}
+              onError={() => console.log("Google login error")}
             />
           </div>
           <div className="flex items-center my-4">

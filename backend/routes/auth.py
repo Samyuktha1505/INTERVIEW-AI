@@ -242,21 +242,13 @@ async def google_auth_login(request: Request):
             raise HTTPException(status_code=400, detail="Invalid Google token")
 
         user = get_user_by_email(email)
-        if user:
-            user_id = user["user_id"]
+        if not user:
+            return JSONResponse(status_code=400, content={"detail": "Signup first to join with us"})
 
-            # ✅ Check if hash exists
-            if not user["hash_password"]:
-                # Optional default hash: user can still login via forgot-password
-                default_hash = hash_password("GoogleDefault@123")
-                create_user_hash(user_id, email, default_hash)
-
-        else:
-            # User doesn't exist — create
-            user_id = create_user(email=email)
-            log_login_trace(user_id, request.client.host, "GOOGLE_SIGNUP")
-
-            # ✅ Also create default hash for new Google signup
+        user_id = user["user_id"]
+        # ✅ Check if hash exists
+        if not user["hash_password"]:
+            # Optional default hash: user can still login via forgot-password
             default_hash = hash_password("GoogleDefault@123")
             create_user_hash(user_id, email, default_hash)
 
