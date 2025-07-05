@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status,Query
 from fastapi.responses import JSONResponse
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import logging
 import traceback
 import json
@@ -151,7 +151,9 @@ async def get_analysis_by_interview(interview_id: str, current_user: dict = Depe
             conn.close()
 
 @router.get("/")
-async def get_sessions(current_user: Dict[str, Any] = Depends(get_current_user)):
+async def get_scheduled_interviews(
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
     conn = None
     cursor = None
     try:
@@ -162,67 +164,62 @@ async def get_sessions(current_user: Dict[str, Any] = Depends(get_current_user))
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
 
-        # Subquery to get latest session per interview
         query = """
             SELECT 
-                i.interview_id, 
-                latest_ifs.session_id, 
-                m.transcription_flag, 
-                m.transcription, 
+                i.interview_id,
                 i.target_role,
-                i.target_company, 
-                i.interview_type, 
-                i.years_of_experience, 
-                i.current_designation, 
-                i.created_at, 
+                i.target_company,
+                i.interview_type,
+                i.years_of_experience,
+                i.current_designation,
+                i.created_at,
                 i.status,
-                i.prompt_example_questions
+                latest_s.session_id,
+                m.transcription_flag,
+                m.transcription
             FROM Interview i
-            JOIN (
-                SELECT ifs.interview_id, MAX(ifs.session_id) AS session_id
-                FROM InterviewSession ifs
-                GROUP BY ifs.interview_id
-            ) AS latest_ifs ON i.interview_id = latest_ifs.interview_id
-            JOIN Meeting m ON latest_ifs.session_id = m.session_id
+            LEFT JOIN (
+                SELECT interview_id, MAX(session_id) AS session_id
+                FROM InterviewSession
+                GROUP BY interview_id
+            ) AS latest_s ON i.interview_id = latest_s.interview_id
+            LEFT JOIN Meeting m ON latest_s.session_id = m.session_id
             WHERE i.user_id = %s
+              AND i.status = 'scheduled'
             ORDER BY i.created_at DESC
         """
 
         cursor.execute(query, (user_id,))
         rows = cursor.fetchall()
 
-        sessions = []
+        interviews = []
         for row in rows:
-            created_at_iso = row["created_at"].isoformat() if hasattr(row["created_at"], "isoformat") else str(row["created_at"])
-            sessions.append({
-                "id": row["session_id"],
-                "interview_id": row["interview_id"],
-                "userId": str(user_id),
+            interviews.append({
+                "userId": user_id,
+                "id": row["interview_id"],
                 "targetRole": row["target_role"],
                 "targetCompany": row["target_company"],
                 "interviewType": row["interview_type"],
                 "yearsOfExperience": row["years_of_experience"],
                 "currentDesignation": row["current_designation"],
-                "createdAt": created_at_iso,
-                "hasCompletedInterview": bool(row["transcription_flag"]),
-                "transcript": row["transcription"],
-                "metrics": None,
-                "status": row["status"]
+                "createdAt": row["created_at"].isoformat() if row["created_at"] else None,
+                "status": row["status"],
+                "session_id": row["session_id"],  # Can be None
+                "hasCompletedInterview": bool(row["transcription_flag"]) if row["transcription_flag"] is not None else False,
+                "transcript": row["transcription"] if row["transcription"] else None
             })
 
-        return JSONResponse(content={"sessions": convert_decimal(sessions)})
+        return JSONResponse(content={"interviews": convert_decimal(interviews)})
 
     except Exception as e:
-        logger.error(f"Error retrieving sessions: {e}\n{traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail="Failed to fetch sessions")
+        logger.error(f"Error fetching scheduled interviews: {e}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail="Failed to fetch scheduled interviews")
 
     finally:
         if cursor:
             cursor.close()
         if conn and conn.is_connected():
             conn.close()
-
-
 
 
 @router.delete("/interview/{interview_id}")

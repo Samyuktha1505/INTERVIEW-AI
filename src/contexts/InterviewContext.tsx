@@ -22,6 +22,7 @@ export interface Room {
   sessionInterval?: number;
   createdAt: string;
   hasCompletedInterview?: boolean;
+  session_id?: string | null;
   transcript?: string | null;
   metrics?: any;
   status?: string;
@@ -83,24 +84,27 @@ export const InterviewProvider = ({ children }: { children: ReactNode }) => {
   const pendingCreates = useRef<Set<string>>(new Set());
 
   const fetchRooms = useCallback(async () => {
-    if (!user) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await apiRequest<{ sessions: Room[] }>({
-        endpoint: '/api/v1/sessions/',
-        method: 'GET',
-      });
+  if (!user) return;
+  setLoading(true);
+  setError(null);
+  try {
+    const data = await apiRequest<{ interviews: Room[] }>({
+      endpoint: '/api/v1/sessions/',
+      method: 'GET',
+    });
 
-      const sessions = Array.isArray(data.sessions) ? data.sessions : [];
-      setRooms(sessions);
-    } catch {
-      setRooms([]);
-      setError('Failed to fetch rooms. Please try again later.');
-    } finally {
-      setLoading(false);
-    }
-  }, [user]);
+    const interviews = Array.isArray(data.interviews) ? data.interviews : [];
+
+    //console.log("Fetched rooms:", interviews); // <---- Add this line to print all rooms
+
+    setRooms(interviews);
+  } catch {
+    setRooms([]);
+    setError('Failed to fetch rooms. Please try again later.');
+  } finally {
+    setLoading(false);
+  }
+}, [user]);
 
   useEffect(() => {
     if (!authLoading && user) {
@@ -191,7 +195,7 @@ export const InterviewProvider = ({ children }: { children: ReactNode }) => {
         hasCompletedInterview: false,
         transcript: null,
         metrics: null,
-        status: 'active',
+        status: 'scheduled',
       };
 
       setRooms((prev) => {
@@ -219,40 +223,70 @@ export const InterviewProvider = ({ children }: { children: ReactNode }) => {
   );
 
   const deleteRoom = async (roomId: string): Promise<void> => {
-    try {
-      const roomToDelete = rooms.find((room) => room.id === roomId);
-      if (!roomToDelete) {
-        throw new Error('Room not found');
-      }
+  try {
+    // Find the room object in the current rooms array that matches the given roomId
+    const roomToDelete = rooms.find((room) => room.id === roomId);
+    console.log("Finding room to delete:", roomToDelete);
 
-      await apiRequest({
-        endpoint: `/api/v1/sessions/interview/${roomId}`,
-        method: 'DELETE',
-      });
-
-      setRooms((prev) => prev.filter((room) => room.id !== roomId));
-    } catch (error) {
-      console.error('Failed to delete interview:', error);
-      setError('Failed to delete room. Please try again.');
-      throw error;
+    // If the room is not found, throw an error to stop the deletion process
+    if (!roomToDelete) {
+      console.error("Room not found for id:", roomId);
+      throw new Error('Room not found');
     }
-  };
+
+    // Call the backend API to delete the interview session by its roomId
+    console.log(`Sending DELETE request for roomId: ${roomId}`);
+    await apiRequest({
+      endpoint: `/api/v1/sessions/interview/${roomId}`,
+      method: 'DELETE',
+    });
+    console.log(`Delete request successful for roomId: ${roomId}`);
+
+    // Update local state by removing the deleted room from the rooms list
+    setRooms((prev) => {
+      const filtered = prev.filter((room) => room.id !== roomId);
+      console.log("Updated rooms list after deletion:", filtered);
+      return filtered;
+    });
+  } catch (error) {
+    // If any error occurs, log it, set an error message in state, and rethrow it
+    console.error('Failed to delete interview:', error);
+    setError('Failed to delete room. Please try again.');
+    throw error;
+  }
+};
 
   const markRoomAsCompleted = async (roomId: string): Promise<void> => {
-    try {
-      const updatedRoom = await apiRequest<Room>({
-        endpoint: `/api/v1/sessions/${roomId}`,
-        method: 'PUT',
-        body: { hasCompletedInterview: true },
-      });
-      setRooms((prev) =>
-        prev.map((room) => (room.id === roomId ? updatedRoom : room))
+  console.log("📌 markRoomAsCompleted() called with roomId:", roomId);
+
+  try {
+    // 1️⃣ Making PUT request to mark the interview session as completed
+    const requestBody = { hasCompletedInterview: true };
+    console.log(`📡 Sending PUT request to /api/v1/sessions/${roomId} with body:`, requestBody);
+
+    const updatedRoom = await apiRequest<Room>({
+      endpoint: `/api/v1/sessions/${roomId}`,
+      method: 'PUT',
+      body: requestBody,
+    });
+
+    console.log("✅ Received updated room from API:", updatedRoom);
+
+    // 2️⃣ Updating rooms state with the modified room
+    setRooms((prev) => {
+      const newRooms = prev.map((room) =>
+        room.id === roomId ? updatedRoom : room
       );
-    } catch (err) {
-      setError('Failed to mark room as completed');
-      throw err;
-    }
-  };
+      console.log("🧠 Updated rooms state:", newRooms);
+      return newRooms;
+    });
+  } catch (err) {
+    console.error("❌ Error in markRoomAsCompleted:", err);
+    setError('Failed to mark room as completed');
+    throw err; // rethrow for higher-level handlers
+  }
+};
+
 
   const updateRoom = async (
     roomId: string,

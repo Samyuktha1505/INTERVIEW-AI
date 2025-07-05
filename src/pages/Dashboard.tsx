@@ -58,21 +58,55 @@ const Dashboard = () => {
 
   // Filter rooms owned by current user and with status 'scheduled'
   const deletedRooms = JSON.parse(localStorage.getItem('deletedRooms') || '[]');
-  const userRooms = rooms.filter(
-    (room) =>
-      String(room.userId) === String(user?.id) &&
-      !deletedRooms.includes(room.id)
-  );
+  //console.log("All rooms:", rooms);
+//console.log("Current user ID:", user?.id);
+//console.log("Deleted rooms from localStorage:", deletedRooms);
+
+const userRooms = rooms.filter((room) => {
+  const roomUserId = String(room.userId);
+  const currentUserId = String(user?.id);
+  const isUserRoom = roomUserId === currentUserId;
+  const isNotDeleted = !deletedRooms.includes(room.id);
+
+  //console.log(`Room ID: ${room.id}`);
+  //console.log(`  room.userId: ${roomUserId}`);
+  //console.log(`  user?.id: ${currentUserId}`);
+  //console.log(`  Is user room? ${isUserRoom}`);
+  //console.log(`  Is not deleted? ${isNotDeleted}`);
+
+  return isUserRoom && isNotDeleted;
+});
+
+//console.log("Filtered userRooms:", userRooms);
+
 
   // Check which rooms are completed for enabling report generation
   useEffect(() => {
-    if (userRooms.length > 0) {
-      const roomIds = userRooms.map((room) => room.id);
-      checkCompletedSessions(roomIds).then((completedIds) => {
-        setCompletedRoomIds(completedIds);
-      });
+  if (userRooms.length > 0) {
+    // Extract only valid, non-null string session_ids
+    const sessionIds = userRooms
+      .map((room) => room.session_id)
+      .filter((id): id is string => typeof id === "string" && !!id);
+
+    // If no valid IDs, don't call API
+    if (sessionIds.length === 0) {
+      setCompletedRoomIds(new Set());
+      return;
     }
-  }, [rooms, user?.id]);
+
+    checkCompletedSessions(sessionIds)
+      .then((completedIds) => {
+        setCompletedRoomIds(completedIds);
+      })
+      .catch((error) => {
+        console.error("Error in checkCompletedSessions:", error);
+      });
+  } else {
+    setCompletedRoomIds(new Set()); // clear completed ids if no rooms
+  }
+}, [rooms, user?.id]);
+
+
 
   // Logout handler
   const handleLogout = () => {
@@ -122,22 +156,22 @@ const Dashboard = () => {
   };
 
   // Generate report handler with loading state
-  const handleGenerateReport = async (roomId: string) => {
-    setIsReportLoading(roomId);
-    try {
-      const metrics = await generateAndFetchMetrics(roomId);
-      setSelectedMetrics(metrics);
-      setIsReportModalOpen(true);
-    } catch (error: any) {
-      toast({
-        title: "Error Generating Report",
-        description: error.message || "Could not generate report.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsReportLoading(null);
-    }
-  };
+  const handleGenerateReport = async (sessionId: string) => {
+  setIsReportLoading(sessionId);
+  try {
+    const metrics = await generateAndFetchMetrics(sessionId);
+    setSelectedMetrics(metrics);
+    setIsReportModalOpen(true);
+  } catch (error) {
+    toast({
+      title: "Error Generating Report",
+      description: error instanceof Error ? error.message : "Could not generate report.",
+      variant: "destructive",
+    });
+  } finally {
+    setIsReportLoading(null);  // This must ALWAYS run
+  }
+};
 
   // Sidebar content reused for desktop and mobile
   const sidebarContent = (
@@ -344,21 +378,26 @@ const Dashboard = () => {
                         </Button>
 
                         <Button
-                          variant="secondary"
-                          onClick={() => handleGenerateReport(room.id)}
-                          disabled={
-                            !completedRoomIds.has(room.id) ||
-                            isReportLoading === room.id
-                          }
-                          className="col-span-2"
-                        >
-                          {isReportLoading === room.id ? (
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          ) : (
-                            <FileText className="mr-2 h-4 w-4" />
-                          )}
-                          Generate Report
+                            variant="secondary"
+                            onClick={() => {
+                                // Only trigger if session_id is in the completed set
+                                if (room.session_id && completedRoomIds.has(room.session_id)) {
+                                    handleGenerateReport(room.session_id);
+                                    }
+                              }}
+                            disabled={
+                              !room.session_id || !completedRoomIds.has(room.session_id)
+                              }
+                            className="col-span-2"
+                             >
+                              {isReportLoading === room.session_id ? (
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              ) : (
+                                  <FileText className="mr-2 h-4 w-4" />
+                               )}
+                                      Generate Report
                         </Button>
+
 
                         <Button variant="outline" size="icon" aria-label="Edit room">
                           <Edit className="h-4 w-4" />

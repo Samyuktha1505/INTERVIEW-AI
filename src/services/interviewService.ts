@@ -17,7 +17,6 @@ interface CompletionResponse {
 }
 
 interface ResumeAnalysisData {
-  session_id: string;
   targetRole: string;
   targetCompany: string;
   yearsOfExperience: string;
@@ -121,20 +120,41 @@ export const apiRequest = async <T = any>({
 export const checkCompletedSessions = async (
   sessionIds: string[]
 ): Promise<Set<string>> => {
-  if (!Array.isArray(sessionIds) || sessionIds.length === 0 || sessionIds.some(id => typeof id !== 'string')) {
-    console.warn('Skipping checkCompletedSessions: no valid session IDs');
+  console.log("✅ checkCompletedSessions() called with sessionIds:", sessionIds);
+
+  // 1️⃣ Validate input
+  if (
+    !Array.isArray(sessionIds) ||
+    sessionIds.length === 0 ||
+    sessionIds.some(id => typeof id !== 'string')
+  ) {
+    console.warn("⚠️ Skipping checkCompletedSessions: invalid session IDs", sessionIds);
     return new Set();
   }
+  console.log("✅ Valid session IDs received");
+
+  // 2️⃣ Make API request
+  const requestBody = { session_ids: sessionIds };
+  console.log("📡 Sending POST request to /api/v1/sessions/check-completion with body:", requestBody);
 
   const data = await apiRequest<CompletionResponse>({
     endpoint: '/api/v1/sessions/check-completion',
     method: 'POST',
-    body: { session_ids: sessionIds }, // ✅ Correct key
+    body: requestBody,
   });
+  console.log("✅ Response from check-completion:", data);
 
+  // 3️⃣ Filter completed sessions
   const completed = data.sessions.filter(session => session.is_completed);
-  return new Set(completed.map(session => session.session_id));
+  console.log("✅ Filtered completed sessions:", completed);
+
+  // 4️⃣ Extract session IDs of completed sessions into a Set
+  const completedSet = new Set(completed.map(session => session.session_id));
+  console.log("✅ Returning completed session IDs Set:", completedSet);
+
+  return completedSet;
 };
+
 
 /**
  * ✅ Analyze resume for given session metadata
