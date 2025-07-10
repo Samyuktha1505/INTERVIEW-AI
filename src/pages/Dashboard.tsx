@@ -399,9 +399,7 @@ const userRooms = rooms.filter((room) => {
                         </Button>
 
 
-                        <Button variant="outline" size="icon" aria-label="Edit room">
-                          <Edit className="h-4 w-4" />
-                        </Button>
+                        
                         <Button
                           variant="destructive"
                           size="icon"
