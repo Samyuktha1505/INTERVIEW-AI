@@ -13,3 +13,6 @@ pydantic
 google
 google-generativeai
 tiktoken
+sonner
+lucide-react
+canvas-confetti

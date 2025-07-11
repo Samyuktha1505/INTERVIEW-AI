@@ -16,6 +16,7 @@ import { useScreenCapture } from "../hooks/use-screen-capture";
 import { AudioRecorder } from "../lib/audio-recorder";
 import { createInterviewSession } from "../services/interviewService";
 import { useInterview } from "../contexts/InterviewContext"; // ✅ NEW
+import FeedbackModal from '../components/FeedbackModal';
 
 async function fetchAnalysis(sessionId: string) {
   const API_BASE_URL = 'http://localhost:8000/api';
@@ -44,6 +45,8 @@ const LiveInterviewSessionContent = () => {
   const [interviewStarted, setInterviewStarted] = useState(false);
   const { disconnect, connected, connect } = useLiveAPIContext();
   const { refetchRooms } = useInterview(); // ✅
+  const [showFeedback, setShowFeedback] = useState(false);
+  const [pendingEnd, setPendingEnd] = useState(false);
 
   const webcam = useWebcam();
   const screenCapture = useScreenCapture();
@@ -144,7 +147,18 @@ const LiveInterviewSessionContent = () => {
       console.error("Failed to refresh rooms:", err);
     }
 
-    navigate('/dashboard');
+    setShowFeedback(true); // Show feedback modal
+    setPendingEnd(true); // Mark that we want to navigate after feedback
+  };
+
+  const submitFeedback = async ({ sessionId, feedback_text, rating }: { sessionId: string, feedback_text: string, rating: number }) => {
+    const API_BASE_URL = 'http://localhost:8000/api';
+    await fetch(`${API_BASE_URL}/v1/feedback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ session_id: sessionId, feedback_text, rating }),
+    });
   };
 
   const handleEndWithoutSaving = () => {
@@ -173,37 +187,51 @@ const LiveInterviewSessionContent = () => {
   }
 
   return (
-    <div className="streaming-console flex h-screen bg-gray-100">
-      <aside className="w-72 lg:w-96 flex-shrink-0 h-full">
-        <SidePanel initialPrompt={initialPrompt} />
-      </aside>
-      <main className="flex-grow h-full overflow-y-auto">
-        <div className="main-app-area">
-          <Altair />
-          <video
-            className={cn("stream", {
-              hidden: !videoRef.current || !videoStream,
-            })}
-            ref={videoRef}
-            autoPlay
-            playsInline
+    <>
+      <div className="streaming-console flex h-screen bg-gray-100">
+        <aside className="w-72 lg:w-96 flex-shrink-0 h-full">
+          <SidePanel initialPrompt={initialPrompt} />
+        </aside>
+        <main className="flex-grow h-full overflow-y-auto">
+          <div className="main-app-area">
+            <Altair />
+            <video
+              className={cn("stream", {
+                hidden: !videoRef.current || !videoStream,
+              })}
+              ref={videoRef}
+              autoPlay
+              playsInline
+            />
+          </div>
+          <ControlTray
+            videoRef={videoRef}
+            supportsVideo={true}
+            onVideoStreamChange={setVideoStream}
+            enableEditingSettings={true}
+            onEndAndSave={handleEndAndSave}
+            onEndWithoutSaving={handleEndWithoutSaving}
+            audioRecorder={audioRecorder}
+            webcam={webcam}
+            screenCapture={screenCapture}
+            onStartInterview={handleStartInterview}
+            connected={connected}
           />
-        </div>
-        <ControlTray
-          videoRef={videoRef}
-          supportsVideo={true}
-          onVideoStreamChange={setVideoStream}
-          enableEditingSettings={true}
-          onEndAndSave={handleEndAndSave}
-          onEndWithoutSaving={handleEndWithoutSaving}
-          audioRecorder={audioRecorder}
-          webcam={webcam}
-          screenCapture={screenCapture}
-          onStartInterview={handleStartInterview}
-          connected={connected}
-        />
-      </main>
-    </div>
+        </main>
+      </div>
+      <FeedbackModal
+        open={showFeedback}
+        onClose={() => {
+          setShowFeedback(false);
+          if (pendingEnd) {
+            setPendingEnd(false);
+            navigate('/dashboard');
+          }
+        }}
+        onSubmit={submitFeedback}
+        sessionId={sessionId || ''}
+      />
+    </>
   );
 };
 
