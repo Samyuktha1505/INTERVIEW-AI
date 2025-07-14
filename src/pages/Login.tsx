@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,26 +13,25 @@ import { Eye, EyeOff } from "lucide-react";
 import { useNavigate, Link } from "react-router-dom";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "../contexts/AuthContext";
-import { GoogleLogin } from "@react-oauth/google";
+import { GoogleLogin, CredentialResponse } from "@react-oauth/google";
 
 const Login = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const { user, login } = useAuth();
+
+  const { user, login, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
     if (user) {
-      console.log("✅ User already logged in, redirecting...");
       navigate("/dashboard");
     }
   }, [user, navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("📨 Submitting login form with:", email, password);
     setIsLoading(true);
 
     const emailRegex = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -49,10 +48,8 @@ const Login = () => {
     try {
       await login(email, password);
       toast({ title: "Login successful", description: "Welcome back!" });
-      console.log("✅ Login successful. Redirecting...");
       navigate("/dashboard");
     } catch (err) {
-      console.error("❌ Login error:", err);
       toast({
         title: "Login failed",
         description: "Invalid email or password",
@@ -63,29 +60,33 @@ const Login = () => {
     }
   };
 
-  const handleGoogleLogin = async (credentialResponse: any) => {
-    try {
-      const token = credentialResponse?.credential;
-      if (!token) throw new Error("No token received");
-
-      const res = await fetch("http://localhost:8000/api/v1/auth/google-auth-login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ token }),
-      });
-
-      if (!res.ok) throw new Error("Google login failed");
-
-      toast({ title: "Login successful", description: "Welcome back!" });
-      navigate("/dashboard");
-    } catch (err) {
-      console.error("❌ Google login error:", err);
+  const handleGoogleLogin = async (response: CredentialResponse) => {
+    if (!response?.credential) {
       toast({
-        title: "Error",
-        description: "Failed to login with Google",
+        title: "Google Login Failed",
+        description: "No credential received.",
         variant: "destructive",
       });
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      const user = await loginWithGoogle(response.credential);
+      toast({
+        title: "Login successful",
+        description: `Welcome back, ${user.firstName || "User"}!`,
+      });
+
+      navigate(user.isProfileComplete ? "/dashboard" : "/basic-info");
+    } catch (err: any) {
+      toast({
+        title: "Google Login Failed",
+        description: err.message || "Something went wrong.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -98,20 +99,18 @@ const Login = () => {
             Sign in to your InterviewAI account
           </CardDescription>
         </CardHeader>
+
         <CardContent>
           <div className="flex justify-center mb-4">
-            <GoogleLogin
-              onSuccess={handleGoogleLogin}
-              onError={() => {
-                console.error("❌ Google Login Failed");
-                toast({
-                  title: "Error",
-                  description: "Google login failed.",
-                  variant: "destructive",
-                });
-              }}
-            />
+            <GoogleLogin onSuccess={handleGoogleLogin} onError={() => {
+              toast({
+                title: "Google Login Failed",
+                description: "Something went wrong while signing in with Google.",
+                variant: "destructive",
+              });
+            }} />
           </div>
+
           <div className="flex items-center my-4">
             <div className="flex-grow h-px bg-muted-foreground/30" />
             <span className="mx-4 text-muted-foreground text-sm">or sign in with email</span>
@@ -128,7 +127,6 @@ const Login = () => {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="transition-all duration-300 focus:scale-105"
               />
             </div>
 
@@ -142,7 +140,7 @@ const Login = () => {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  className="transition-all duration-300 focus:scale-105 pr-10"
+                  className="pr-10"
                 />
                 <Button
                   type="button"

@@ -121,7 +121,7 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
 
   private async loadPreviousSessionHandle(): Promise<string | null> {
     try {
-      const handleDataString = localStorage.getItem(this.sessionHandleStorageKey);
+      const handleDataString = sessionStorage.getItem(this.sessionHandleStorageKey);
       if (handleDataString) {
         const handleData: StoredSessionHandle = JSON.parse(handleDataString);
         if (handleData.handle && (Date.now() - handleData.timestamp < this.sessionTimeoutMs)) {
@@ -129,15 +129,15 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
           return handleData.handle;
         } else if (handleData.handle) {
           console.log(`[GenAILiveClient] Stored session handle ${handleData.handle} is older than client-side timeout (${this.sessionTimeoutMs}ms) or invalid. Removing.`);
-          localStorage.removeItem(this.sessionHandleStorageKey);
+          sessionStorage.removeItem(this.sessionHandleStorageKey);
         } else {
-          console.log(`[GenAILiveClient] Found stored session data in localStorage but 'handle' property was missing or invalid.`);
+          console.log(`[GenAILiveClient] Found stored session data in sessionStorage but 'handle' property was missing or invalid.`);
         }
       } else {
-        // console.log(`[GenAILiveClient] No previous session handle found in localStorage with key: ${this.sessionHandleStorageKey}`);
+        // console.log(`[GenAILiveClient] No previous session handle found in sessionStorage with key: ${this.sessionHandleStorageKey}`);
       }
     } catch (error) {
-      console.error("[GenAILiveClient] Error loading session handle from localStorage:", error);
+      console.error("[GenAILiveClient] Error loading session handle from sessionStorage:", error);
     }
     return null;
   }
@@ -145,11 +145,20 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
   private async storeNewSessionHandle(handle: string): Promise<void> {
     try {
       const handleData: StoredSessionHandle = { handle, timestamp: Date.now() };
-      localStorage.setItem(this.sessionHandleStorageKey, JSON.stringify(handleData));
-      console.log(`[GenAILiveClient] Stored new session handle to localStorage: ${handle} at ${new Date(handleData.timestamp).toLocaleString()}`);
+      sessionStorage.setItem(this.sessionHandleStorageKey, JSON.stringify(handleData));
+      console.log(`[GenAILiveClient] Stored new session handle to sessionStorage: ${handle} at ${new Date(handleData.timestamp).toLocaleString()}`);
     } catch (error) {
-      console.error("[GenAILiveClient] Error storing session handle to localStorage:", error);
+      console.error("[GenAILiveClient] Error storing session handle to sessionStorage:", error);
     }
+  }
+
+  /**
+   * Explicitly clears any stored session handle from sessionStorage. Useful when starting a brand-new
+   * interview where we do NOT want to resume any prior state.
+   */
+  public clearStoredSessionHandle() {
+    sessionStorage.removeItem(this.sessionHandleStorageKey);
+    console.log(`[GenAILiveClient] Cleared stored session handle (${this.sessionHandleStorageKey}) from sessionStorage.`);
   }
 
   protected log(type: string, messagePayload: StreamingLog["message"]) {
@@ -161,7 +170,14 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
     this.emit("log", logEntry);
   }
 
-  async connect(model: string, config: LiveConnectConfig, sessionId: string): Promise<boolean> {
+  /**
+   * Establish a new live connection.
+   * @param model Model name.
+   * @param config LiveConnectConfig to use.
+   * @param sessionId Interview session identifier (for transcription etc.).
+   * @param resumePreviousSession If false, forces a fresh connection by disabling any session resumption logic.
+   */
+  async connect(model: string, config: LiveConnectConfig, sessionId: string, resumePreviousSession: boolean = true): Promise<boolean> {
     this.log("client.connect", model);
 
     if (this._status !== "disconnected") {
@@ -178,7 +194,12 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
 
     this._status = "connecting";
 
-    const previousSessionHandle = await this.loadPreviousSessionHandle(); // This can be string | null
+    // If the caller explicitly does NOT want to resume a previous session, clear any stored handle first.
+    if (!resumePreviousSession) {
+      this.clearStoredSessionHandle();
+    }
+
+    const previousSessionHandle = resumePreviousSession ? await this.loadPreviousSessionHandle() : null; // string | null
 
     // Always create the sessionResumption configuration object.
     const sessionResumptionConfig: { handle?: string } = {
@@ -218,8 +239,8 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
       console.error("[GenAILiveClient] Connect: Error during SDK connect method call:", e.message || e, e);
       this._status = "disconnected";
       if (previousSessionHandle) {
-        console.log(`[GenAILiveClient] Connect: Clearing potentially invalid session handle ${previousSessionHandle} from localStorage after connection error.`);
-        localStorage.removeItem(this.sessionHandleStorageKey);
+        console.log(`[GenAILiveClient] Connect: Clearing potentially invalid session handle ${previousSessionHandle} from sessionStorage after connection error.`);
+        sessionStorage.removeItem(this.sessionHandleStorageKey);
       }
       if (this.isAutoReconnecting) {
         console.log("[GenAILiveClient] Connect: Error occurred during an auto-reconnect attempt. Will rely on onclose for next step.");
@@ -354,7 +375,7 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
                 return;
             }
             console.log(`[GenAILiveClient] AttemptReconnect: Executing auto-reconnect attempt #${this.autoReconnectAttempts} to model ${this._model}...`);
-            await this.connect(this._model, this.config, "YOUR_SESSION_ID_HERE"); // TODO: You need to pass the actual sessionId here
+            await this.connect(this._model, this.config, "YOUR_SESSION_ID_HERE", true); // TODO: You need to pass the actual sessionId here
         } else if (!this.isAutoReconnecting) {
             console.log(`[GenAILiveClient] AttemptReconnect: Auto-reconnect cycle was cancelled before attempt #${this.autoReconnectAttempts} execution.`);
         } else {

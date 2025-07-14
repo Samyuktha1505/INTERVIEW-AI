@@ -29,7 +29,7 @@ export type UseLiveAPIResults = {
   model: string;
   setModel: (model: string) => void;
   connected: boolean;
-  connect: (sessionId?: string) => Promise<void>;
+  connect: (sessionId?: string, resumePreviousSession?: boolean) => Promise<void>;
   disconnect: () => Promise<void>;
   volume: number;
   setSessionTimeout: (milliseconds: number) => void; // Exposed function
@@ -99,7 +99,7 @@ export function useLiveAPI(options: LiveClientOptions): UseLiveAPIResults {
   }, [client]);
 
   const connect = useCallback(
-    async (sessionId?: string) => {
+    async (sessionId?: string, resumePreviousSession: boolean = true) => {
       if (!config) {
         throw new Error("[useLiveAPI] LiveConnectConfig has not been set.");
       }
@@ -111,7 +111,7 @@ export function useLiveAPI(options: LiveClientOptions): UseLiveAPIResults {
         client.disconnect();
       }
 
-      await client.connect(model, config, sessionId ?? "");
+      await client.connect(model, config, sessionId ?? "", resumePreviousSession);
     },
     [client, config, model]
   );

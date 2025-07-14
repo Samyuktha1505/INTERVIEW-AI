@@ -235,31 +235,69 @@ async def google_auth_login(request: Request):
     if not token:
         raise HTTPException(status_code=400, detail="Token missing")
 
+    ip = request.client.host or "unknown"
+
     try:
-        idinfo = id_token.verify_oauth2_token(token, google_requests.Request(), audience=GOOGLE_CLIENT_ID)
+        # Verify token using Google
+        idinfo = id_token.verify_oauth2_token(
+            token, google_requests.Request(), audience=GOOGLE_CLIENT_ID
+        )
+
         email = idinfo.get("email")
+        name = idinfo.get("name")
+        picture = idinfo.get("picture")
+
         if not email:
             raise HTTPException(status_code=400, detail="Invalid Google token")
 
+        # Check if user exists
         user = get_user_by_email(email)
-        if user:
+
+        if not user:
+            # Auto-register new user
+            user_id = create_user(email=email)  # Only email supported
+            print("✅ New Google user created with ID:", user_id)
+            if not user_id:
+                raise HTTPException(status_code=500, detail="User creation failed")
+
+            default_hash = hash_password("GoogleDefault@123")
+            create_user_hash(user_id, email, default_hash)
+            log_login_trace(user_id, ip, "REGISTERED VIA GOOGLE")
+            # For new user, profile is obviously incomplete
+            is_profile_complete = False
+        else:
             user_id = user["user_id"]
 
-            # ✅ Check if hash exists
             if not user["hash_password"]:
-                # Optional default hash: user can still login via forgot-password
                 default_hash = hash_password("GoogleDefault@123")
                 create_user_hash(user_id, email, default_hash)
 
-        else:
-            # User doesn't exist — create
-            user_id = create_user(email=email)
-            log_login_trace(user_id, request.client.host, "GOOGLE_SIGNUP")
+            # Fetch full user profile fields needed for completeness check
+            conn = get_db_connection()
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute(
+                """
+                SELECT first_name, last_name, phone, gender, date_of_birth, college_name, years_of_experience
+                FROM User
+                WHERE user_id = %s
+                """,
+                (user_id,)
+            )
+            full_user = cursor.fetchone()
+            cursor.close()
+            conn.close()
 
-            # ✅ Also create default hash for new Google signup
-            default_hash = hash_password("GoogleDefault@123")
-            create_user_hash(user_id, email, default_hash)
+            is_profile_complete = all([
+                full_user.get("first_name"),
+                full_user.get("last_name"),
+                full_user.get("phone"),
+                full_user.get("gender"),
+                full_user.get("date_of_birth"),
+                full_user.get("college_name"),
+                full_user.get("years_of_experience") is not None
+            ])
 
+        # Issue JWT token
         access_token = create_access_token(
             {
                 "sub": str(user_id),
@@ -270,12 +308,14 @@ async def google_auth_login(request: Request):
         )
 
         store_token_in_redis(str(user_id), access_token, ACCESS_TOKEN_EXPIRE_MINUTES * 60)
+        log_login_trace(user_id, ip, "SUCCESS VIA GOOGLE")
 
+        # Send response
         response = JSONResponse(content={
             "user_id": user_id,
             "email": email,
             "token": access_token,
-            "isProfileComplete": False
+            "isProfileComplete": is_profile_complete
         })
         set_token_cookie(response, access_token)
         return response
@@ -283,6 +323,10 @@ async def google_auth_login(request: Request):
     except ValueError as e:
         print("Google token verification error:", e)
         raise HTTPException(status_code=401, detail="Invalid Google token")
+    except Exception as e:
+        import traceback
+        print("🔴 Google Auth Exception:", traceback.format_exc())
+        raise HTTPException(status_code=500, detail="Internal server error during Google login")
 
 
 @router.post("/basic-info")

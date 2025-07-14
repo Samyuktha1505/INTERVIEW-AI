@@ -7,3 +7,12 @@ passlib[bcrypt]
 PyJWT
 PyMuPDF
 genai
+httpx
+boto3
+pydantic
+google
+google-generativeai
+tiktoken
+sonner
+lucide-react
+canvas-confetti
