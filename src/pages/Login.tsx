@@ -102,14 +102,24 @@ const Login = () => {
 
         <CardContent>
           <div className="flex justify-center mb-4">
-            <GoogleLogin onSuccess={handleGoogleLogin} onError={() => {
-              toast({
-                title: "Google Login Failed",
-                description: "Something went wrong while signing in with Google.",
-                variant: "destructive",
-              });
-            }} />
-          </div>
+  <GoogleLogin
+    onSuccess={handleGoogleLogin}
+    onError={() => {
+      toast({
+        title: "Google Login Failed",
+        description: "Something went wrong while signing in with Google.",
+        variant: "destructive",
+      });
+    }}
+    useOneTap
+    shape="rectangular"
+    size="large"
+    text="continue_with"
+    width="300" // Adjust width as needed
+    theme="outline" // or "filled_blue"
+    logo_alignment="left"
+  />
+</div>
 
           <div className="flex items-center my-4">
             <div className="flex-grow h-px bg-muted-foreground/30" />
