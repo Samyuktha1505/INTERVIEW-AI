@@ -35,7 +35,7 @@ interface AuthContextType {
   updateProfile: (profileData: Partial<User>) => void;
   isLoading: boolean;
   error: string | null;
-  loginWithGoogle: (credential: string) => Promise<void>;
+  loginWithGoogle: (credential: string) => Promise<User>;
   accessToken: string | null;
   refreshToken: () => Promise<void>;
 }
@@ -44,9 +44,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function useAuth(): AuthContextType {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error("useAuth must be used within an AuthProvider");
-  }
+  if (!context) throw new Error("useAuth must be used within an AuthProvider");
   return context;
 }
 
@@ -66,7 +64,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (response.ok) {
         const data = await response.json();
-        console.log("✅ User session restored:", data);
         setUser({
           id: data.user?.id?.toString() || data.user_id?.toString(),
           email: data.user?.email || "",
@@ -76,7 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           gender: data.user?.gender,
           dateOfBirth: data.user?.dateOfBirth,
           collegeName: data.user?.collegeName,
-          resumeUrl: data.user?.resume_url || data.resume_url || undefined,
+          resumeUrl: data.user?.resume_url || data.resume_url,
           yearsOfExperience: data.user?.yearsOfExperience,
           countryCode: data.user?.countryCode,
           isProfileComplete: data.isProfileComplete ?? true,
@@ -98,8 +95,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const contentType = response.headers.get("Content-Type");
       if (contentType?.includes("application/json")) {
         const errorData = await response.json();
-        const detail = errorData.detail || errorData.message || response.statusText;
-        throw new Error(detail);
+        throw new Error(errorData.detail || errorData.message || response.statusText);
       } else {
         const text = await response.text();
         throw new Error(text || response.statusText);
@@ -108,7 +104,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const login = async (email: string, password: string) => {
-    console.log("🔐 [AuthContext] login() called with:", email);
     setIsLoading(true);
     setError(null);
 
@@ -116,8 +111,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const response = await fetch(`${BASE_AUTH_URL}/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
         credentials: "include",
+        body: JSON.stringify({ email, password }),
       });
 
       await handleResponseError(response);
@@ -132,16 +127,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         gender: data.user?.gender,
         dateOfBirth: data.user?.dateOfBirth,
         collegeName: data.user?.collegeName,
-        resumeUrl: data.user?.resume_url || data.resume_url || undefined,
+        resumeUrl: data.user?.resume_url || data.resume_url,
         yearsOfExperience: data.user?.yearsOfExperience,
         countryCode: data.user?.countryCode,
         isProfileComplete: data.isProfileComplete ?? false,
       });
 
-      console.log("✅ Login successful. User:", data.user);
       return data;
     } catch (err) {
-      console.error("❌ Login error:", err);
       setError(err instanceof Error ? err.message : "Login failed");
       throw err;
     } finally {
@@ -157,12 +150,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   ) => {
     setIsLoading(true);
     setError(null);
+
     try {
       const response = await fetch(`${BASE_AUTH_URL}/signup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, mobile, countryCode }),
         credentials: "include",
+        body: JSON.stringify({ email, password, mobile, countryCode }),
       });
 
       await handleResponseError(response);
@@ -173,11 +167,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email: data.user?.email || email,
         mobile,
         countryCode,
-        resumeUrl: data.user?.resume_url || data.resume_url || undefined,
+        resumeUrl: data.user?.resume_url || data.resume_url,
         isProfileComplete: false,
       });
     } catch (err) {
-      console.error("❌ Signup error:", err);
       setError(err instanceof Error ? err.message : "Signup failed");
       throw err;
     } finally {
@@ -203,16 +196,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser((prev) => (prev ? { ...prev, ...profileData } : null));
   };
 
-  const loginWithGoogle = async (credential: string) => {
-    console.log("🧠 loginWithGoogle() called with credential:", credential);
+  const loginWithGoogle = async (credential: string): Promise<User> => {
     setIsLoading(true);
     setError(null);
-
-    if (!credential) {
-      setError("No credential provided");
-      setIsLoading(false);
-      return;
-    }
 
     try {
       const response = await fetch(`${BASE_AUTH_URL}/google-auth-login`, {
@@ -225,24 +211,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await handleResponseError(response);
       const data = await response.json();
 
-      setUser({
-        id: data.user?.id?.toString() || data.user_id?.toString(),
-        email: data.user?.email || data.email,
-        firstName: data.user?.firstName,
-        lastName: data.user?.lastName,
-        mobile: data.user?.mobile,
-        gender: data.user?.gender,
-        dateOfBirth: data.user?.dateOfBirth,
-        collegeName: data.user?.collegeName,
-        resumeUrl: data.user?.resume_url || data.resume_url || undefined,
-        yearsOfExperience: data.user?.yearsOfExperience,
-        countryCode: data.user?.countryCode,
+      const user: User = {
+        id: data.user_id?.toString() || "",
+        email: data.email || "",
+        firstName: data.firstName,
+        lastName: data.lastName,
+        mobile: data.mobile,
+        gender: data.gender,
+        dateOfBirth: data.dateOfBirth,
+        collegeName: data.collegeName,
+        resumeUrl: data.resume_url,
+        yearsOfExperience: data.yearsOfExperience,
+        countryCode: data.countryCode,
         isProfileComplete: data.isProfileComplete ?? true,
-      });
+      };
 
+      setUser(user);
       setAccessToken(data.token || null);
+      return user;
     } catch (err) {
-      console.error("❌ Google login failed:", err);
       setError(err instanceof Error ? err.message : "Google login failed");
       throw err;
     } finally {
@@ -261,7 +248,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const data = await response.json();
       setAccessToken(data.access_token);
     } catch (err) {
-      console.error("🔁 Refresh token error:", err);
       logout();
       throw err;
     }
