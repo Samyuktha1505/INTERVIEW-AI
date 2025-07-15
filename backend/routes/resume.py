@@ -57,11 +57,12 @@ async def analyze_resume(
 
         db_conn = get_db_connection()
         cursor = db_conn.cursor()
+        
 
         # Get latest log_id for the user session
         cursor.execute("""
             SELECT log_id FROM LoginTrace
-            WHERE user_id = %s AND login_status IN ('SUCCESS', 'SIGNUP_SUCCESS')
+            WHERE user_id = %s AND login_status IN ('SUCCESS', 'SIGNUP_SUCCESS','SUCCESS VIA GOOGLE')
             ORDER BY login_time DESC
             LIMIT 1
         """, (user_id,))
