@@ -439,3 +439,60 @@ async def start_interview_session(
             cursor.close()
         if conn and conn.is_connected():
             conn.close()
+
+@router.get("/latest/{interview_id}")
+async def get_latest_session_for_interview(interview_id: int, current_user: Dict[str, Any] = Depends(get_current_user)):
+    """
+    Returns the session_id with the latest session_start_date for the given interview_id, if the user owns the interview.
+    """
+    conn = None
+    cursor = None
+    try:
+        user_id = current_user.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="User not authenticated")
+
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        # Verify interview ownership
+        cursor.execute(
+            """
+            SELECT i.interview_id
+            FROM Interview i
+            JOIN LoginTrace lt ON i.log_id = lt.log_id
+            WHERE i.interview_id = %s AND lt.user_id = %s
+            LIMIT 1
+            """,
+            (interview_id, user_id)
+        )
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Interview not found or not authorized.")
+
+        # Get the latest session_id by session_start_date
+        cursor.execute(
+            """
+            SELECT session_id
+            FROM InterviewSession
+            WHERE interview_id = %s
+            ORDER BY session_start_date DESC
+            LIMIT 1
+            """,
+            (interview_id,)
+        )
+        row = cursor.fetchone()
+        if not row or not row.get("session_id"):
+            raise HTTPException(status_code=404, detail="No sessions found for this interview.")
+
+        return JSONResponse(content={"session_id": row["session_id"]})
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching latest session for interview {interview_id}: {e}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail="Failed to fetch latest session.")
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()

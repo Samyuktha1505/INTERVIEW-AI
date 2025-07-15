@@ -211,3 +211,16 @@ export const createInterviewSession = async (
   });
   return data.session_id;
 };
+
+/**
+ * Fetch the latest session_id for a given interview_id
+ */
+export const fetchLatestSessionId = async (
+  interviewId: string | number
+): Promise<string> => {
+  const data = await apiRequest<{ session_id: string }>({
+    endpoint: `/api/v1/sessions/latest/${interviewId}`,
+    method: 'GET',
+  });
+  return data.session_id;
+};

@@ -29,7 +29,7 @@ import { toast } from "@/hooks/use-toast";
 import CreateRoomModal from "../components/CreateRoomModal";
 import { ReportModal } from "../components/ReportModal";
 import { generateAndFetchMetrics, Metrics } from "../services/metricsService";
-import { checkCompletedSessions } from "../services/interviewService";
+import { checkCompletedSessions, fetchLatestSessionId } from "../services/interviewService";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
 const Dashboard = () => {
@@ -156,9 +156,11 @@ const userRooms = rooms.filter((room) => {
   };
 
   // Generate report handler with loading state
-  const handleGenerateReport = async (sessionId: string) => {
-  setIsReportLoading(sessionId);
+  const handleGenerateReport = async (interviewId: string) => {
+  setIsReportLoading(interviewId);
   try {
+    // Fetch the latest session_id for this interview
+    const sessionId = await fetchLatestSessionId(interviewId);
     const metrics = await generateAndFetchMetrics(sessionId);
     setSelectedMetrics(metrics);
     setIsReportModalOpen(true);
@@ -379,18 +381,13 @@ const userRooms = rooms.filter((room) => {
 
                         <Button
                             variant="secondary"
-                            onClick={() => {
-                                // Only trigger if session_id is in the completed set
-                                if (room.session_id && completedRoomIds.has(room.session_id)) {
-                                    handleGenerateReport(room.session_id);
-                                    }
-                              }}
+                            onClick={() => handleGenerateReport(room.id)}
                             disabled={
                               !room.session_id || !completedRoomIds.has(room.session_id)
                               }
                             className="col-span-2"
                              >
-                              {isReportLoading === room.session_id ? (
+                              {isReportLoading === room.id ? (
                               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                               ) : (
                                   <FileText className="mr-2 h-4 w-4" />

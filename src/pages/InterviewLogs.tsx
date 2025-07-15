@@ -8,7 +8,7 @@ import { Link } from "react-router-dom";
 import { ChevronDown, ChevronUp, ChevronLeft, Code, MessageSquare, Cpu, Shield, FileText, Video } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { generateAndFetchMetrics, Metrics } from '../services/metricsService';
-import { checkCompletedSessions } from '../services/interviewService';
+import { checkCompletedSessions, fetchLatestSessionId } from '../services/interviewService';
 import { Pie } from 'react-chartjs-2';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
 
@@ -22,6 +22,7 @@ const InterviewLogs = () => {
   const [expandedReports, setExpandedReports] = useState<Set<string>>(new Set());
   const [metricsData, setMetricsData] = useState<Record<string, Metrics>>({});
   const [loadingMetrics, setLoadingMetrics] = useState<Set<string>>(new Set());
+  const [latestSessionIds, setLatestSessionIds] = useState<Record<string, string>>({});
   const userRooms = rooms.filter((room, index) => {
   const roomUserIdStr = String(room.userId);
   const userIdStr = String(user?.id);
@@ -69,14 +70,17 @@ const InterviewLogs = () => {
   
 
 
-  const toggleReport = (sessionid: string) => {
+  const toggleReport = async (interviewId: string) => {
     const newSet = new Set(expandedReports);
-    if (newSet.has(sessionid)) {
-      newSet.delete(sessionid);
+    if (newSet.has(interviewId)) {
+      newSet.delete(interviewId);
     } else {
-      newSet.add(sessionid);
-      if (!metricsData[sessionid]) {
-        loadMetrics(sessionid);
+      newSet.add(interviewId);
+      // Fetch latest session_id for this interview
+      const sessionId = await fetchLatestSessionId(interviewId);
+      setLatestSessionIds(prev => ({ ...prev, [interviewId]: sessionId }));
+      if (!metricsData[sessionId]) {
+        loadMetrics(sessionId);
       }
     }
     setExpandedReports(newSet);
@@ -174,16 +178,17 @@ const InterviewLogs = () => {
       ) : (
         <div className="space-y-4">
           {completedRooms.map((room) => {
-            const metrics = metricsData[room.session_id];
-            const isExpanded = expandedReports.has(room.session_id);
-            const isLoading = loadingMetrics.has(room.session_id);
+            const sessionId = latestSessionIds[room.id];
+            const metrics = metricsData[sessionId];
+            const isExpanded = expandedReports.has(room.id);
+            const isLoading = loadingMetrics.has(sessionId);
             const performanceBadge = metrics ? getPerformanceBadge(metrics.overall_rating) : null;
 
             return (
-              <Card key={room.session_id} className="overflow-hidden">
+              <Card key={room.id} className="overflow-hidden">
                 <div 
                   className="flex items-center justify-between p-6 cursor-pointer hover:bg-accent/50 transition-colors"
-                  onClick={() => toggleReport(room.session_id)}
+                  onClick={() => toggleReport(room.id)}
                 >
                   <div>
                     <h3 className="font-medium text-lg">{room.targetRole}</h3>
