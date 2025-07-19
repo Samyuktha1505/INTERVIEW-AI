@@ -10,12 +10,10 @@ import React, { useEffect, useRef, useState } from "react";
 import { useLiveAPIContext } from "../../contexts/LiveAPIContext";
 import { ChatMessage, useChatStore } from "../../lib/store-chat";
 
-// NEW: Define the props interface for the SidePanel component
 interface SidePanelProps {
   initialPrompt: string;
 }
 
-// --- Helper component for a single chat bubble (no changes) ---
 const ChatBubble = ({ message }: { message: ChatMessage }) => {
   const isUser = message.author === "user";
   return (
@@ -37,7 +35,6 @@ const ChatBubble = ({ message }: { message: ChatMessage }) => {
   );
 };
 
-// NEW: Update the function to accept the 'initialPrompt' prop
 export default function SidePanel({ initialPrompt }: SidePanelProps) {
   const { client, connected } = useLiveAPIContext();
   const chatMessages = useChatStore((state) => state.messages);
@@ -46,41 +43,17 @@ export default function SidePanel({ initialPrompt }: SidePanelProps) {
   const [textInput, setTextInput] = useState("");
   const transcriptEndRef = useRef<HTMLDivElement>(null);
 
-  // NEW: Add state to ensure we only send the initial prompt once
-  const [isPromptSent, setIsPromptSent] = useState(false);
+  // ✅ REMOVED: No longer need to track if the prompt has been sent.
+  // const [isPromptSent, setIsPromptSent] = useState(false);
 
-  // This existing useEffect for scrolling the view is unchanged
   useEffect(() => {
     if (showSubtitles) {
       transcriptEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   }, [chatMessages, showSubtitles]);
 
-  // NEW: Add a useEffect to send the initial prompt when the connection is ready
-  useEffect(() => {
-    // Check if we have a prompt, are connected, and haven't sent it yet
-    if (initialPrompt && connected && !isPromptSent) {
-      console.log("Sending initial prompt to AI Agent...");
-      
-      const systemPrompt = `You are a highly experienced and friendly interviewer. Your role is to conduct a professional and conversational interview that feels deeply personalized to the user's resume.
-You must adhere to the following rules:
-1.  **Start with a Personalized Opening:** Introduce yourself briefly. Then, look at the key themes in the interview questions provided below to understand the candidate's core skills (e.g., backend development, cloud infrastructure, project management). Use this insight to formulate a personalized, open-ended introductory question. For example: "I was looking over your background, and it seems you have a lot of experience in [theme from resume, e.g., 'building scalable APIs']. To start, could you walk me through your journey and what interests you most in that area?" This makes the opening feel directly connected to the candidate's history. Do NOT start with a generic "tell me about yourself."
-2.  **Be Conversational:** After the user's introduction, you can ask a relevant follow-up question. For example, if they mention a specific project, you can ask them to elaborate on it.
-3.  **Use the Provided Questions:** After the initial personalized introduction, proceed with the tailored interview questions provided below. Ask only one question at a time.
-4.  **Stay in Character:** If the user asks a question, politely deflect it and reiterate that your role is to learn more about them. For example, say "I'm happy to answer questions about the role later, but for now, I'd like to focus on your experience. Let's continue."
-5.  **Listen and Transition:** Wait for the user's full response before moving to the next question. Transition smoothly between topics.
-
-Here is the list of interview questions to use after the introduction:
-${initialPrompt}
-
-Please begin the interview now with your introduction and a warm, personalized, open-ended introductory question based on the themes from the user's resume.`;
-
-      // Send the prompt to the backend to configure the AI agent for the interview
-      client.send([{ text: systemPrompt }]);
-      // Mark the prompt as sent to prevent re-sending on re-renders
-      setIsPromptSent(true);
-    }
-  }, [initialPrompt, connected, isPromptSent, client]);
+  // ✅ REMOVED: The entire useEffect block for sending the initial prompt is gone.
+  // That logic now lives in LiveInterviewSession.tsx.
 
   const handleSubmit = () => {
     if (!textInput.trim() || !connected) return;
@@ -97,7 +70,6 @@ Please begin the interview now with your introduction and a warm, personalized, 
     }
   };
 
-  // The JSX and UI below are completely unchanged
   return (
     <div className="flex h-full flex-col bg-slate-50">
       {/* Header */}

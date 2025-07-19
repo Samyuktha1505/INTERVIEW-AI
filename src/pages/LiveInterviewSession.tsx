@@ -15,7 +15,7 @@ import { useWebcam } from "../hooks/use-webcam";
 import { useScreenCapture } from "../hooks/use-screen-capture";
 import { AudioRecorder } from "../lib/audio-recorder";
 import { createInterviewSession } from "../services/interviewService";
-import { useInterview } from "../contexts/InterviewContext"; // ✅ NEW
+import { useInterview } from "../contexts/InterviewContext";
 import FeedbackModal from '../components/FeedbackModal';
 
 async function fetchAnalysis(sessionId: string) {
@@ -43,8 +43,8 @@ const LiveInterviewSessionContent = () => {
   const [error, setError] = useState<string | null>(null);
   const sessionEndedRef = useRef(false);
   const [interviewStarted, setInterviewStarted] = useState(false);
-  const { disconnect, connected, connect } = useLiveAPIContext();
-  const { refetchRooms } = useInterview(); // ✅
+  const { disconnect, connected, connect, client } = useLiveAPIContext();
+  const { refetchRooms } = useInterview();
   const [showFeedback, setShowFeedback] = useState(false);
   const [pendingEnd, setPendingEnd] = useState(false);
 
@@ -53,6 +53,46 @@ const LiveInterviewSessionContent = () => {
   const [audioRecorder] = useState(() => new AudioRecorder());
   const [sessionId, setSessionId] = useState<string | null>(null);
 
+  // ✅ ADDED: A ref to safely track the interview state in cleanup effects.
+  const interviewStartedRef = useRef(interviewStarted);
+  useEffect(() => {
+    interviewStartedRef.current = interviewStarted;
+  }, [interviewStarted]);
+
+
+  useEffect(() => {
+    const videoElement = videoRef.current;
+    if (!videoElement) return;
+
+    if (videoElement.srcObject !== videoStream) {
+      videoElement.srcObject = videoStream;
+    }
+
+    if (videoStream && videoElement.paused) {
+      videoElement.play().catch(err => {
+        if (err.name !== 'AbortError') {
+          console.error("Video play failed:", err);
+        }
+      });
+    }
+  }, [videoStream]);
+
+  useEffect(() => {
+    const handleClientClose = () => {
+      webcam.stop();
+      setVideoStream(null);
+      audioRecorder.stop();
+      setInterviewStarted(false);
+      setSessionId(null);
+    };
+    client.on("close", handleClientClose);
+    return () => {
+      client.off("close", handleClientClose);
+    };
+  }, [client, webcam, audioRecorder]);
+
+
+  // ✅ CHANGED: The dependency array for this cleanup hook is fixed.
   useEffect(() => {
     sessionEndedRef.current = false;
     useChatStore.getState().clearChat();
@@ -61,11 +101,16 @@ const LiveInterviewSessionContent = () => {
       screenCapture.stop();
       audioRecorder.stop();
       disconnect();
-      if (!sessionEndedRef.current && interviewStarted) {
+      setVideoStream(null);
+      setInterviewStarted(false);
+      setSessionId(null);
+      // Use the ref to get the latest value in the cleanup function.
+      if (!sessionEndedRef.current && interviewStartedRef.current) {
         SessionTranscription.endSession().catch(console.error);
       }
     };
-  }, [roomId, disconnect, webcam, screenCapture, audioRecorder, interviewStarted]);
+    // The dependency array is now correct and will only run cleanup on unmount.
+  }, [roomId, disconnect, webcam, screenCapture, audioRecorder]);
 
   useEffect(() => {
     if (!roomId) {
@@ -73,7 +118,6 @@ const LiveInterviewSessionContent = () => {
       setIsLoading(false);
       return;
     }
-
     const getAnalysisWithRetries = async () => {
       const MAX_RETRIES = 5;
       const RETRY_DELAY_MS = 2000;
@@ -90,12 +134,10 @@ const LiveInterviewSessionContent = () => {
               throw new Error("Analysis data missing Questionnaire_prompt.");
             }
           }
-
           if (response.status !== 404) {
             const errorData = await response.json();
             throw new Error(errorData.detail || `Server error: ${response.status}`);
           }
-
           await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
         } catch (err: any) {
           setError(err.message);
@@ -103,25 +145,44 @@ const LiveInterviewSessionContent = () => {
           return;
         }
       }
-
       setError("Analysis not found after several attempts. Please try creating a new room.");
       setIsLoading(false);
     };
-
     getAnalysisWithRetries();
   }, [roomId]);
 
   const handleStartInterview = async () => {
-    if (!interviewStarted && roomId) {
-      try {
-        const sid = await createInterviewSession(roomId);
-        setSessionId(sid);
-        SessionTranscription.initializeSession(sid);
-        setInterviewStarted(true);
-        await connect(sid, false);
-      } catch (err: any) {
-        setError(err.message || "Failed to start interview session.");
+    if (interviewStarted || !roomId) return;
+
+    try {
+      const sid = await createInterviewSession(roomId);
+      setSessionId(sid);
+      SessionTranscription.initializeSession(sid);
+      await connect(sid, false);
+      setInterviewStarted(true);
+
+      if (initialPrompt) {
+        console.log("Connection successful. Sending initial prompt...");
+        const systemPrompt = `You are a highly experienced and friendly interviewer. Your role is to conduct a professional and conversational interview that feels deeply personalized to the user's resume.
+You must adhere to the following rules:
+1.  **Start with a Personalized Opening:** Introduce yourself briefly. Then, look at the key themes in the interview questions provided below to understand the candidate's core skills (e.g., backend development, cloud infrastructure, project management). Use this insight to formulate a personalized, open-ended introductory question. For example: "I was looking over your background, and it seems you have a lot of experience in [theme from resume, e.g., 'building scalable APIs']. To start, could you walk me through your journey and what interests you most in that area?" This makes the opening feel directly connected to the candidate's history. Do NOT start with a generic "tell me about yourself."
+2.  **Be Conversational:** After the user's introduction, you can ask a relevant follow-up question. For example, if they mention a specific project, you can ask them to elaborate on it.
+3.  **Use the Provided Questions:** After the initial personalized introduction, proceed with the tailored interview questions provided below. Ask only one question at a time.
+4.  **Stay in Character:** If the user asks a question, politely deflect it and reiterate that your role is to learn more about them. For example, say "I'm happy to answer questions about the role later, but for now, I'd like to focus on your experience. Let's continue."
+5.  **Listen and Transition:** Wait for the user's full response before moving to the next question. Transition smoothly between topics.
+
+Here is the list of interview questions to use after the introduction:
+${initialPrompt}
+
+Please begin the interview now with your introduction and a warm, personalized, open-ended introductory question based on the themes from the user's resume.`;
+
+        client.send([{ text: systemPrompt }]);
       }
+
+    } catch (err: any) {
+      setError(err.message || "Failed to start interview session.");
+      setSessionId(null);
+      setInterviewStarted(false);
     }
   };
 
@@ -131,24 +192,27 @@ const LiveInterviewSessionContent = () => {
     screenCapture.stop();
     audioRecorder.stop();
     disconnect();
+    setVideoStream(null);
+    setInterviewStarted(false);
+    setSessionId(null);
 
-    if (interviewStarted) {
+    if (interviewStartedRef.current) { // Use ref here
       try {
         await SessionTranscription.endSession();
-        setInterviewStarted(false);
+        // No need to set interviewStarted to false here, it's already done.
       } catch (err) {
         console.error("Error ending session:", err);
       }
     }
 
     try {
-      await refetchRooms(); // ✅ Refresh room list after session ends
+      await refetchRooms();
     } catch (err) {
       console.error("Failed to refresh rooms:", err);
     }
 
-    setShowFeedback(true); // Show feedback modal
-    setPendingEnd(true); // Mark that we want to navigate after feedback
+    setShowFeedback(true);
+    setPendingEnd(true);
   };
 
   const submitFeedback = async ({ sessionId, feedback_text, rating }: { sessionId: string, feedback_text: string, rating: number }) => {
@@ -194,18 +258,18 @@ const LiveInterviewSessionContent = () => {
         </aside>
         <main className="flex-grow h-full overflow-y-auto">
           <div className="main-app-area">
-            <Altair />
+            <div className={cn({ 'hidden': !!videoStream })}>
+              <Altair />
+            </div>
             <video
-              className={cn("stream", {
-                hidden: !videoRef.current || !videoStream,
-              })}
+              className={cn("stream", { hidden: !videoStream })}
               ref={videoRef}
               autoPlay
               playsInline
+              muted
             />
           </div>
           <ControlTray
-            videoRef={videoRef}
             supportsVideo={true}
             onVideoStreamChange={setVideoStream}
             enableEditingSettings={true}
