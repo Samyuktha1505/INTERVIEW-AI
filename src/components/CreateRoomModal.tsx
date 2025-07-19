@@ -93,15 +93,7 @@ const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ open, onOpenChange })
       return false;
     }
 
-    if (currentDesignation.trim().toLowerCase() === targetRole.trim().toLowerCase()) {
-      toast({ title: "Role Conflict", description: "Current designation and target role cannot be the same.", variant: "destructive" });
-      return false;
-    }
-
-    if (currentDesignation.trim().toLowerCase() === targetCompany.trim().toLowerCase()) {
-      toast({ title: "Company Conflict", description: "Current designation and target company cannot be the same.", variant: "destructive" });
-      return false;
-    }
+    
 
     const allowedTypes = [
       'Technical Interview',

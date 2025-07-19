@@ -53,17 +53,22 @@ export default function VoiceSelector() {
           control: (baseStyles) => ({
             ...baseStyles,
             background: "var(--Neutral-15)",
-            color: "var(--Neutral-90)",
+            color: "#000", // <-- Ensure black text in the control
             minHeight: "33px",
             maxHeight: "33px",
             border: 0,
           }),
+          singleValue: (base) => ({
+            ...base,
+            color: "#000", // <-- Black text for selected value
+          }),
           option: (styles, { isFocused, isSelected }) => ({
             ...styles,
-            backgroundColor: isFocused
+            color: "#000", // <-- Black text for all options
+            backgroundColor: isSelected
+              ? "#bfdbfe" // <-- Light blue for selected option (Tailwind blue-200)
+              : isFocused
               ? "var(--Neutral-30)"
-              : isSelected
-              ? "var(--Neutral-20)"
               : undefined,
           }),
         }}

@@ -101,3 +101,8 @@
     @apply bg-background text-foreground;
   }
 }
+
+select, select option, select:focus, select:active {
+  color: #000 !important;
+  background: #fff !important; /* Optional: ensure background is white */
+}
