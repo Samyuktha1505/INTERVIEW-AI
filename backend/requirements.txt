@@ -16,3 +16,4 @@ tiktoken
 sonner
 lucide-react
 canvas-confetti
+orjson

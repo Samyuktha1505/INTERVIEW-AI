@@ -17,10 +17,33 @@ export interface Question {
 }
 
 export interface ResumeAnalysisResponse {
-  session_id: string; 
-  interview_id:string;
+  interview_id: string;
   Questionnaire_prompt: Question[];
+
+  resume_summary: {
+    skills?: string[];
+    certifications?: string[];
+    projects?: string[];
+    previous_companies?: string[];
+    graduation_college?: string;
+    current_role?: string;
+    current_company?: string;
+    current_location?: string;
+  };
+
+  input_metadata: {
+    target_role: string;
+    target_company: string;
+    years_of_experience: number;
+    interview_type: string;
+    session_interval: number;
+  };
+
+  user_details: {
+    full_name?: string;
+  };
 }
+
 
 /**
  * Sends interview context data to the backend for generating questions.

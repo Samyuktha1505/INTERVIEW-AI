@@ -9,6 +9,7 @@ import datetime
 import os
 from pydantic import BaseModel
 from uuid import uuid4
+from fastapi.responses import ORJSONResponse
 
 from backend.db.mysql import get_db_connection
 from backend.schemas import SessionIdList  # Your Pydantic model for payload validation
@@ -109,7 +110,7 @@ async def check_session_completion(
 @router.get("/analysis/{interview_id}")
 async def get_analysis_by_interview(interview_id: str, current_user: dict = Depends(get_current_user)):
     """
-    Fetch analysis data for the given interview ID if the current user owns the interview.
+    Fetch full analysis data for the given interview ID if the current user owns the interview.
     """
     conn = None
     cursor = None
@@ -122,25 +123,62 @@ async def get_analysis_by_interview(interview_id: str, current_user: dict = Depe
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
 
-        # Verify interview ownership and get prompt_example_questions by interview_id
+        # Fetch Interview details (including user full name from User table)
         cursor.execute("""
-            SELECT i.prompt_example_questions
+            SELECT i.interview_id, i.prompt_example_questions,
+                   i.target_role, i.target_company, i.years_of_experience,
+                   i.interview_type, i.session_interval
             FROM Interview i
-            JOIN LoginTrace lt ON i.log_id = lt.log_id
-            WHERE i.interview_id = %s AND lt.user_id = %s
+            JOIN User u ON i.user_id = u.user_id
+            WHERE i.interview_id = %s AND i.user_id = %s
             LIMIT 1
         """, (interview_id, user_id))
+        interview_row = cursor.fetchone()
 
-        row = cursor.fetchone()
-        if not row or not row.get("prompt_example_questions"):
-            raise HTTPException(status_code=404, detail="Analysis data not found or access denied.")
+        if not interview_row:
+            raise HTTPException(status_code=404, detail="Interview not found or access denied.")
 
-        questionnaire_prompt = json.loads(row["prompt_example_questions"])
+        # Fetch Resume data for the same user (optional: could use interview_id if tied)
+        cursor.execute("""
+            SELECT full_name, skills, certifications, projects,
+                   previous_companies, education_degree,
+                   current_role, current_company, current_location
+            FROM Resume
+            WHERE user_id = %s
+            ORDER BY resume_id DESC
+            LIMIT 1
+        """, (user_id,))
+        resume_row = cursor.fetchone()
 
-        return JSONResponse(content={"Questionnaire_prompt": questionnaire_prompt})
+        # Parse questions
+        questionnaire_prompt = json.loads(interview_row["prompt_example_questions"])
+ 
+        return ORJSONResponse(content={
+    "interview_id": interview_row["interview_id"],
+    "Questionnaire_prompt": questionnaire_prompt,
+    "resume_summary": {
+        "skills": resume_row.get("skills") if resume_row else None,
+        "certifications": resume_row.get("certifications") if resume_row else None,
+        "projects": resume_row.get("projects") if resume_row else None,
+        "previous_companies": resume_row.get("previous_companies") if resume_row else None,
+        "graduation_college": resume_row.get("education_degree") if resume_row else None,
+        "current_role": resume_row.get("current_role") if resume_row else None,
+        "current_company": resume_row.get("current_company") if resume_row else None,
+        "current_location": resume_row.get("current_location") if resume_row else None,
+    },
+    "input_metadata": {
+        "target_role": interview_row["target_role"],
+        "target_company": interview_row["target_company"],
+        "years_of_experience": float(interview_row["years_of_experience"]) if interview_row["years_of_experience"] is not None else None,  # Decimal handled automatically
+        "interview_type": interview_row["interview_type"],
+        "session_interval": interview_row["session_interval"],
+    },
+    "user_details": {
+        "full_name": resume_row["full_name"] if resume_row else None
+    }
+})
 
-    except HTTPException:
-        raise
+        
     except Exception as e:
         logger.error(f"Error fetching analysis for interview {interview_id}: {e}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail="Failed to fetch analysis data.")
@@ -149,6 +187,8 @@ async def get_analysis_by_interview(interview_id: str, current_user: dict = Depe
             cursor.close()
         if conn and conn.is_connected():
             conn.close()
+
+
 
 @router.get("/")
 async def get_scheduled_interviews(

@@ -8,7 +8,7 @@ import cn from "classnames";
 import { LiveClientOptions } from "../types";
 import "../LiveInterviewSession.scss";
 import { Loader2 } from "lucide-react";
-import { ResumeAnalysisResponse } from "../services/resumeAnalysis";
+import { ResumeAnalysisResponse, Question } from "../services/resumeAnalysis"; // Make sure Question is imported
 import { useChatStore } from "../lib/store-chat";
 import { SessionTranscription } from "../lib/session-transcription";
 import { useWebcam } from "../hooks/use-webcam";
@@ -17,6 +17,7 @@ import { AudioRecorder } from "../lib/audio-recorder";
 import { createInterviewSession } from "../services/interviewService";
 import { useInterview } from "../contexts/InterviewContext";
 import FeedbackModal from '../components/FeedbackModal';
+
 
 async function fetchAnalysis(sessionId: string) {
   const API_BASE_URL = 'http://localhost:8000/api';
@@ -38,7 +39,10 @@ const LiveInterviewSessionContent = () => {
   const [videoStream, setVideoStream] = useState<MediaStream | null>(null);
   const { roomId } = useParams<{ roomId: string }>();
   const navigate = useNavigate();
-  const [initialPrompt, setInitialPrompt] = useState<string>('');
+  // Store the formatted prompt string for SidePanel
+  const [initialPromptDisplay, setInitialPromptDisplay] = useState<string>('');
+  // Store the full analysis response for building the system prompt
+  const [analysisResult, setAnalysisResult] = useState<ResumeAnalysisResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const sessionEndedRef = useRef(false);
@@ -53,12 +57,10 @@ const LiveInterviewSessionContent = () => {
   const [audioRecorder] = useState(() => new AudioRecorder());
   const [sessionId, setSessionId] = useState<string | null>(null);
 
-  // ✅ ADDED: A ref to safely track the interview state in cleanup effects.
   const interviewStartedRef = useRef(interviewStarted);
   useEffect(() => {
     interviewStartedRef.current = interviewStarted;
   }, [interviewStarted]);
-
 
   useEffect(() => {
     const videoElement = videoRef.current;
@@ -91,8 +93,6 @@ const LiveInterviewSessionContent = () => {
     };
   }, [client, webcam, audioRecorder]);
 
-
-  // ✅ CHANGED: The dependency array for this cleanup hook is fixed.
   useEffect(() => {
     sessionEndedRef.current = false;
     useChatStore.getState().clearChat();
@@ -104,12 +104,10 @@ const LiveInterviewSessionContent = () => {
       setVideoStream(null);
       setInterviewStarted(false);
       setSessionId(null);
-      // Use the ref to get the latest value in the cleanup function.
       if (!sessionEndedRef.current && interviewStartedRef.current) {
         SessionTranscription.endSession().catch(console.error);
       }
     };
-    // The dependency array is now correct and will only run cleanup on unmount.
   }, [roomId, disconnect, webcam, screenCapture, audioRecorder]);
 
   useEffect(() => {
@@ -126,13 +124,21 @@ const LiveInterviewSessionContent = () => {
           const response = await fetchAnalysis(roomId);
           if (response.ok) {
             const analysisData: ResumeAnalysisResponse = await response.json();
-            if (analysisData.Questionnaire_prompt) {
-              setInitialPrompt(JSON.stringify(analysisData.Questionnaire_prompt));
-              setIsLoading(false);
-              return;
+
+            // Store the entire analysis result
+            setAnalysisResult(analysisData);
+
+            // Format Questionnaire_prompt for display (e.g., in SidePanel)
+            if (analysisData.Questionnaire_prompt && analysisData.Questionnaire_prompt.length > 0) {
+              const formattedPrompt = analysisData.Questionnaire_prompt
+                .map((q: Question, i: number) => `Q${i + 1}: ${q.question}`)
+                .join('\n');
+              setInitialPromptDisplay(formattedPrompt);
             } else {
-              throw new Error("Analysis data missing Questionnaire_prompt.");
+              setInitialPromptDisplay("No specific interview questions generated.");
             }
+            setIsLoading(false);
+            return;
           }
           if (response.status !== 404) {
             const errorData = await response.json();
@@ -140,7 +146,8 @@ const LiveInterviewSessionContent = () => {
           }
           await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
         } catch (err: any) {
-          setError(err.message);
+          console.error("Error fetching analysis:", err); // Log the actual error
+          setError(err.message || "Failed to load interview setup.");
           setIsLoading(false);
           return;
         }
@@ -149,10 +156,10 @@ const LiveInterviewSessionContent = () => {
       setIsLoading(false);
     };
     getAnalysisWithRetries();
-  }, [roomId]);
+  }, [roomId]); // Depend on roomId to refetch if it changes
 
   const handleStartInterview = async () => {
-    if (interviewStarted || !roomId) return;
+    if (interviewStarted || !roomId || !analysisResult) return; // Ensure analysisResult is available
 
     try {
       const sid = await createInterviewSession(roomId);
@@ -160,24 +167,82 @@ const LiveInterviewSessionContent = () => {
       SessionTranscription.initializeSession(sid);
       await connect(sid, false);
       setInterviewStarted(true);
+      const { user_details } = analysisResult || {};
+const candidateName = user_details?.full_name || "Candidate";
+const candidateSkills = analysisResult.resume_summary?.skills || ["Skills"];
+const candidateCertifications = analysisResult.resume_summary?.certifications || ["Certifications"];
+const candidateProjects = analysisResult.resume_summary?.projects || ["Projects"];
+const candidatePreviousCompanies = analysisResult.resume_summary?.previous_companies || ["Previous Companies"];
+const candidateGraduationCollege = analysisResult.resume_summary?.graduation_college || "Graduation College";
+const candidateCurrentRole = analysisResult.resume_summary?.current_role || "Current Role";
+const candidateCurrentCompany = analysisResult.resume_summary?.current_company || "Current Company";
+const candidateCurrentLocation = analysisResult.resume_summary?.current_location || "Current Location";
 
-      if (initialPrompt) {
-        console.log("Connection successful. Sending initial prompt...");
-        const systemPrompt = `You are a highly experienced and friendly interviewer. Your role is to conduct a professional and conversational interview that feels deeply personalized to the user's resume.
-You must adhere to the following rules:
-1.  **Start with a Personalized Opening:** Introduce yourself briefly. Then, look at the key themes in the interview questions provided below to understand the candidate's core skills (e.g., backend development, cloud infrastructure, project management). Use this insight to formulate a personalized, open-ended introductory question. For example: "I was looking over your background, and it seems you have a lot of experience in [theme from resume, e.g., 'building scalable APIs']. To start, could you walk me through your journey and what interests you most in that area?" This makes the opening feel directly connected to the candidate's history. Do NOT start with a generic "tell me about yourself."
-2.  **Be Conversational:** After the user's introduction, you can ask a relevant follow-up question. For example, if they mention a specific project, you can ask them to elaborate on it.
-3.  **Use the Provided Questions:** After the initial personalized introduction, proceed with the tailored interview questions provided below. Ask only one question at a time.
-4.  **Stay in Character:** If the user asks a question, politely deflect it and reiterate that your role is to learn more about them. For example, say "I'm happy to answer questions about the role later, but for now, I'd like to focus on your experience. Let's continue."
-5.  **Listen and Transition:** Wait for the user's full response before moving to the next question. Transition smoothly between topics.
+const candidateTargetRole = analysisResult.input_metadata?.target_role || "Target Role";
+const candidateTargetCompany = analysisResult.input_metadata?.target_company || "Target Company";
+const candidateYearsOfExperience = analysisResult.input_metadata?.years_of_experience ?? 0;
+const candidateInterviewType = analysisResult.input_metadata?.interview_type || "Interview Type";
+const intialPrompt = analysisResult.Questionnaire_prompt || "questions";
+const projectSummary = candidateProjects?.length ? candidateProjects : "a recent project";
 
-Here is the list of interview questions to use after the introduction:
-${initialPrompt}
+      // Construct the system prompt using the stored analysisResult
+      const systemPrompt = `
+You are an AI interviewer conducting a ${candidateInterviewType} interview for ${candidateName}, who is applying for the ${candidateTargetRole} position at ${candidateTargetCompany}.
 
-Please begin the interview now with your introduction and a warm, personalized, open-ended introductory question based on the themes from the user's resume.`;
+Candidate Background:
+- Full Name: ${candidateName}
+- Current Role: ${candidateCurrentRole} at ${candidateCurrentCompany}
+- Experience: ${candidateYearsOfExperience} years
+- Skills: ${candidateSkills}
+- Education: ${candidateGraduationCollege}
+- Certifications: ${candidateCertifications}
+- Key Projects: ${candidateProjects}
+- Previous Companies: ${candidatePreviousCompanies}
+- Location: ${candidateCurrentLocation}
 
-        client.send([{ text: systemPrompt }]);
-      }
+Interview Guidelines:
+1. OPENING:
+   - Start with exact greeting: "Welcome, ${candidateName}."
+   - Immediately follow with a personalized, role-specific opening question
+   - Never use generic prompts like "Tell me about yourself"
+
+2. QUESTION FLOW:
+   - First question should directly relate to ${candidateTargetRole} requirements
+   - Subsequent questions should build naturally on responses
+   - Use smooth transitions like:
+     * "Building on that..."
+     * "Let's explore that further..."
+     * "That's interesting - how did you approach..."
+
+3. INTERVIEW STYLE:
+   - Professional yet conversational tone
+   - Show engagement through:
+     * Brief acknowledgments ("I see", "Interesting approach")
+     * Follow-up probes ("Can you elaborate on...?")
+     * Empathetic responses ("That sounds challenging")
+
+4. CONTENT GUIDELINES:
+   - Keep questions clear and concise
+   - Focus on assessing ${candidateTargetRole} competencies
+   - Reference provided questions (${intialPrompt}) only as inspiration
+   - Adapt questions based on conversation flow
+
+5. BOUNDARIES:
+   - Remain in interviewer character at all times
+   - If asked about role/company:
+     > "The ${candidateTargetRole} position involves [brief summary]. Would you like me to clarify any aspects?"
+   - Never offer personal opinions or career advice
+
+Example Interaction:
+Interviewer: "Welcome, ${candidateName}. I see you recently led a ${projectSummary} at ${candidateCurrentCompany} - what was your technical approach to the most complex challenge there?"
+Candidate: [Responds about architecture decision]
+Interviewer: "Interesting choice. How did you validate that solution with stakeholders?"
+Candidate: [Explains collaboration process]
+Interviewer: "Let's explore your technical depth further. How would you optimize [related system] for scale?"
+
+Begin now with the exact greeting and your first tailored question.
+`;
+      client.send([{ text: systemPrompt }]);
 
     } catch (err: any) {
       setError(err.message || "Failed to start interview session.");
@@ -196,10 +261,9 @@ Please begin the interview now with your introduction and a warm, personalized, 
     setInterviewStarted(false);
     setSessionId(null);
 
-    if (interviewStartedRef.current) { // Use ref here
+    if (interviewStartedRef.current) {
       try {
         await SessionTranscription.endSession();
-        // No need to set interviewStarted to false here, it's already done.
       } catch (err) {
         console.error("Error ending session:", err);
       }
@@ -254,7 +318,8 @@ Please begin the interview now with your introduction and a warm, personalized, 
     <>
       <div className="streaming-console flex h-screen bg-gray-100">
         <aside className="w-72 lg:w-96 flex-shrink-0 h-full">
-          <SidePanel initialPrompt={initialPrompt} />
+          {/* Pass the formatted string to SidePanel */}
+          <SidePanel initialPrompt={initialPromptDisplay} />
         </aside>
         <main className="flex-grow h-full overflow-y-auto">
           <div className="main-app-area">

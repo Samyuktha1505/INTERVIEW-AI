@@ -47,7 +47,18 @@ async def analyze_resume(
         logger.debug(f"Payload: {payload.dict()}")
 
         s3_key = request.query_params.get("s3_key")
-        pdf_bytes = s3_client.get_resume_by_key(s3_key) if s3_key else s3_client.get_resume_from_s3(user_id)
+
+        if s3_key:
+            pdf_bytes = s3_client.get_resume_by_key(s3_key)
+        else:
+            try:
+        # ✅ Local fallback path for testing with a hardcoded PDF
+                with open("/Users/buddapallavi/Library/Mobile Documents/com~apple~Preview/Documents/Resume_.pdf", "rb") as f:
+                    pdf_bytes = f.read()
+            except FileNotFoundError:
+                raise HTTPException(status_code=404, detail="Local resume file not found for testing.")
+
+        
         if not pdf_bytes:
             raise HTTPException(status_code=404, detail="Resume PDF not found in storage")
 
@@ -166,12 +177,40 @@ async def analyze_resume(
             interview_id_for_session
         ))
         db_conn.commit()
+        
+        # Fetch full_name from Resume table
+        cursor.execute("SELECT full_name FROM Resume WHERE user_id = %s", (user_id,))
+        resume_row = cursor.fetchone()
+        full_name = resume_row[0] if resume_row else None
+
 
         # Return interview_id to frontend
         return JSONResponse(content={
-            "interview_id": interview_id_for_session,
-            "Questionnaire_prompt": questionnaire_prompt
-        })
+    "interview_id": interview_id_for_session,
+    "Questionnaire_prompt": questionnaire_prompt,
+    "resume_summary": {
+        "skills": extracted_fields.get("skills"),
+        "certifications": extracted_fields.get("certifications"),
+        "projects": extracted_fields.get("projects"),
+        "previous_companies": extracted_fields.get("previous_companies"),
+        "graduation_college": extracted_fields.get("education_degree"),
+        "current_role": extracted_fields.get("current_role", payload.currentDesignation),
+        "current_company": extracted_fields.get("current_company"),
+        "current_location": extracted_fields.get("current_location"),
+    },
+    "input_metadata": {
+        "target_role": payload.targetRole,
+        "target_company": payload.targetCompany,
+        "years_of_experience": payload.yearsOfExperience,
+        "interview_type": payload.interviewType,
+        "session_interval": payload.sessionInterval
+    },
+    "user_details": {
+        "full_name": full_name,
+    }
+})
+
+
 
     except ResourceExhausted as e:
         logger.error(f"Gemini API quota exceeded: {e}", exc_info=True)
